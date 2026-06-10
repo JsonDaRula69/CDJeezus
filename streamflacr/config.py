@@ -23,10 +23,10 @@ SOUNDCLOUD_USER_URL: str = os.environ.get("SOUNDCLOUD_USER_URL", "")
 SOUNDCLOUD_POLL_INTERVAL: int = int(os.environ.get("SOUNDCLOUD_POLL_INTERVAL", "300"))  # seconds
 
 # Download destination
-DOWNLOAD_DIR: Path = Path(os.environ.get("DOWNLOAD_DIR", "/Users/djtchill/Music/_Serato_/Auto Import"))
+DOWNLOAD_DIR: Path = Path(os.environ.get("DOWNLOAD_DIR", str(Path.home() / "Music" / "_Serato_" / "Auto Import")))
 
 # Serato
-SERATO_DIR: Path = Path(os.environ.get("SERATO_DIR", "/Users/djtchill/Music/_Serato_"))
+SERATO_DIR: Path = Path(os.environ.get("SERATO_DIR", str(Path.home() / "Music" / "_Serato_")))
 
 # State file (tracks last-seen set to avoid re-downloading)
 STATE_FILE: Path = Path(os.environ.get("STATE_FILE", str(CONFIG_DIR / "state.json")))

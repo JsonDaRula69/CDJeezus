@@ -17,7 +17,7 @@ from .config import SERATO_DIR
 
 logger = logging.getLogger(__name__)
 
-BACKUP_DIR = Path("/Users/djtchill/Music/_Serato_Backup_SFr")
+BACKUP_DIR = Path.home() / "Music" / "_Serato_Backup_SFr"
 MAX_BACKUPS = 5
 
 

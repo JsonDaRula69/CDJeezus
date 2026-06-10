@@ -12,3 +12,20 @@ build/
 *.flac
 *.wav
 *.app/
+
+# Secrets & credentials
+.env.local
+.env.production
+*.pem
+*.key
+credentials.json
+token.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db

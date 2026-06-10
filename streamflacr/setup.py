@@ -17,7 +17,7 @@ from .config import CONFIG_DIR, DOWNLOAD_DIR, SERATO_DIR
 logger = logging.getLogger(__name__)
 
 ENV_FILE = CONFIG_DIR / ".env"
-INSTALLED_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.streamflacr.plist"
+INSTALLED_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.streamflacr.plist"
 
 
 def kill_running_daemon() -> bool:
@@ -168,7 +168,7 @@ def _generate_plist() -> str:
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.djtchill.streamflacr</string>
+    <string>com.streamflacr</string>
     <key>ProgramArguments</key>
     <array>
         <string>{streamflacr_path}</string>
@@ -300,10 +300,11 @@ def full_uninstall() -> None:
     print("  ───────────────────────────────────────────")
     print("  StreamFLACr has been fully uninstalled.")
     print()
+    from .serato_crate import BACKUP_DIR
     print("  The following were NOT removed (Serato data is sensitive):")
     print(f"    Smart crates: {SERATO_DIR / 'SmartCrates'}")
     print(f"    Downloaded files: {DOWNLOAD_DIR}")
-    print(f"    Serato backups: /Users/djtchill/Music/_Serato_Backup_SFr")
+    print(f"    Serato backups: {BACKUP_DIR}")
     print("  ───────────────────────────────────────────")
     print()
 
