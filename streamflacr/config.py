@@ -22,8 +22,11 @@ SLSK_PASSWORD: str = os.environ.get("SLSK_PASSWORD", "")
 SOUNDCLOUD_USER_URL: str = os.environ.get("SOUNDCLOUD_USER_URL", "")
 SOUNDCLOUD_POLL_INTERVAL: int = int(os.environ.get("SOUNDCLOUD_POLL_INTERVAL", "300"))  # seconds
 
-# Download destination
+# Download destination (Serato Auto Import watches this folder)
 DOWNLOAD_DIR: Path = Path(os.environ.get("DOWNLOAD_DIR", str(Path.home() / "Music" / "_Serato_" / "Auto Import")))
+
+# Staging directory — files download and get tagged here before moving to DOWNLOAD_DIR
+STAGING_DIR: Path = Path(os.environ.get("STAGING_DIR", str(Path.home() / "Music" / "_Serato_" / ".staging")))
 
 # Serato
 SERATO_DIR: Path = Path(os.environ.get("SERATO_DIR", str(Path.home() / "Music" / "_Serato_")))
@@ -40,3 +43,4 @@ MIN_FILESIZE_MB: int = int(os.environ.get("MIN_FILESIZE_MB", "5"))
 def is_configured() -> bool:
     """Check if the minimum required configuration is present."""
     return bool(SLSK_USERNAME and SLSK_PASSWORD and SOUNDCLOUD_USER_URL)
+

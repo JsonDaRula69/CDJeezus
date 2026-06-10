@@ -26,9 +26,10 @@ MIN_MP3_BITRATE = 320
 class SoulseekDownloader:
     """Manages a persistent Soulseek connection for searching and downloading."""
 
-    def __init__(self):
+    def __init__(self, staging_dir: Path | None = None):
         self.client: SoulSeekClient | None = None
-        self._download_dir = str(DOWNLOAD_DIR)
+        # Download to staging dir first; move to DOWNLOAD_DIR after tagging
+        self._download_dir = str(staging_dir or DOWNLOAD_DIR)
 
     async def connect(self) -> None:
         settings = Settings(

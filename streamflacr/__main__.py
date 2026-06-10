@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .config import (
     DOWNLOAD_DIR,
+    STAGING_DIR,
     SEARCH_TIMEOUT,
     SOUNDCLOUD_POLL_INTERVAL,
 )
@@ -104,6 +105,7 @@ async def process_new_track(
 
         local_path = await slsk.download(candidate["username"], candidate["remote_path"])
         if local_path and local_path.exists():
+            # Tag metadata while file is still in staging dir
             tag_file(
                 filepath=local_path,
                 artist=track.canonical_artist or track.artist,
@@ -117,6 +119,12 @@ async def process_new_track(
                 sc_track=track,
                 playlist_name=playlist_name,
             )
+
+            # Atomically move to Serato Auto Import so Serato sees
+            # a fully-tagged file, not a half-written one
+            final_path = DOWNLOAD_DIR / local_path.name
+            local_path.replace(final_path)
+            local_path = final_path
 
             state.mark_downloaded(
                 playlist_url=playlist_url,
@@ -178,11 +186,18 @@ async def sync_playlist(
     logger.info("Found %d new track(s) in '%s'", len(new_ids), playlist_name)
     new_tracks = [t for t in tracks if t.track_id in new_ids]
 
-    for track in new_tracks:
-        try:
-            await process_new_track(track, playlist_name, slsk, state, playlist_url)
-        except Exception as e:
-            logger.error("Error processing track %s: %s", track.title, e)
+    # Process tracks concurrently (up to 3 simultaneous downloads)
+    semaphore = asyncio.Semaphore(3)
+
+    async def _process_with_semaphore(t: TrackInfo) -> None:
+        async with semaphore:
+            try:
+                await process_new_track(t, playlist_name, slsk, state, playlist_url)
+            except Exception as e:
+                logger.error("Error processing track %s: %s", t.title, e)
+
+    tasks = [_process_with_semaphore(t) for t in new_tracks]
+    await asyncio.gather(*tasks)
 
     state.mark_seen(playlist_url, list(new_ids))
     state.save()
@@ -244,9 +259,10 @@ async def run_once(slsk: SoulseekDownloader, state: StateManager) -> None:
 
 async def amain(daemon: bool = False) -> None:
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
     state = StateManager()
-    slsk = SoulseekDownloader()
+    slsk = SoulseekDownloader(staging_dir=STAGING_DIR)
 
     try:
         await slsk.connect()

@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import CONFIG_DIR, DOWNLOAD_DIR, SERATO_DIR
+from .config import CONFIG_DIR, DOWNLOAD_DIR, SERATO_DIR, STAGING_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +146,7 @@ SOUNDCLOUD_POLL_INTERVAL={poll_interval}
 DOWNLOAD_DIR={DOWNLOAD_DIR}
 
 # Serato database directory
+STAGING_DIR={STAGING_DIR}
 SERATO_DIR={SERATO_DIR}
 
 # Search preferences
@@ -285,7 +286,7 @@ def full_uninstall() -> None:
     else:
         print("  - No log files found")
 
-    # 5. Remove the uv/pipx tool installation
+    # 6. Remove the uv/pipx tool installation
     uninstalled_tool = False
     result = subprocess.run(
         ["uv", "tool", "uninstall", "streamflacr"],
@@ -395,6 +396,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
     print("\n  [3/3] Finishing up...")
     write_env_file(slsk_creds, user_url)
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
     print(f"  ✓ Download directory: {DOWNLOAD_DIR}")
     print(f"  ✓ All playlists will be monitored automatically")
 
