@@ -1,8 +1,8 @@
 """StreamFLACr main daemon.
 
 Monitors ALL SoundCloud playlists for the authenticated user, searches
-Soulseek for FLAC versions of new tracks, downloads them, tags metadata,
-and creates matching Serato smart crates.
+Soulseek for FLAC versions of new tracks (falling back to 320kbps MP3),
+downloads them, tags metadata, and creates matching Serato smart crates.
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from .config import (
     SOUNDCLOUD_POLL_INTERVAL,
     SOUNDCLOUD_USER_URL,
 )
-from .metadata import tag_flac
+from .metadata import tag_file
 from .notify import send_notification
 from .serato_crate import ensure_smart_crate
 from .soundcloud import (
@@ -23,8 +23,6 @@ from .soundcloud import (
     TrackInfo,
     discover_user_playlists,
     fetch_playlist_tracks,
-    refresh_playlist_tracks,
-    _api_get,
 )
 from .soulseek import SoulseekDownloader
 from .state import StateManager
@@ -39,19 +37,31 @@ async def process_new_track(
     state: StateManager,
     playlist_url: str,
 ) -> Path | None:
-    """Search, download, tag, and integrate a single track. Returns local path on success."""
+    """Search, download, tag, and integrate a single track.
+
+    Priority: FLAC > 320kbps MP3. Alerts the user if nothing is found.
+    Returns local path on success, None on failure.
+    """
     logger.info("Processing: %s - %s", track.artist, track.title)
 
-    candidates = await slsk.search_flac(track.artist, track.title, timeout=SEARCH_TIMEOUT)
+    candidates = await slsk.search_track(track.artist, track.title, timeout=SEARCH_TIMEOUT)
+
     if not candidates:
-        logger.warning("No FLAC found on Soulseek for: %s - %s", track.artist, track.title)
-        send_notification("StreamFLACr", f"No FLAC found: {track.artist} - {track.title}")
+        msg = f"No FLAC or 320kbps MP3 found: {track.artist} - {track.title}"
+        logger.warning(msg)
+        send_notification("StreamFLACr: Not Found", msg)
         return None
 
+    # Log what we found
+    top = candidates[0]
+    fmt = "FLAC" if top["tier"] == 0 else f"{top['bitrate']}kbps MP3"
+    logger.info("Best candidate: %s (%s) from %s", top["filename"], fmt, top["username"])
+
+    # Try up to 3 candidates
     for candidate in candidates[:3]:
         local_path = await slsk.download(candidate["username"], candidate["remote_path"])
         if local_path and local_path.exists():
-            tag_flac(
+            tag_file(
                 filepath=local_path,
                 artist=track.artist,
                 title=track.title,
@@ -64,11 +74,14 @@ async def process_new_track(
                 title=track.title,
                 local_path=str(local_path),
             )
-            send_notification("StreamFLACr", f"Downloaded: {track.artist} - {track.title}")
+            is_flac = local_path.suffix.lower() == ".flac"
+            quality = "FLAC" if is_flac else "320kbps MP3"
+            send_notification("StreamFLACr", f"Downloaded ({quality}): {track.artist} - {track.title}")
             return local_path
 
-    logger.error("All download attempts failed for: %s - %s", track.artist, track.title)
-    send_notification("StreamFLACr", f"Download failed: {track.artist} - {track.title}")
+    msg = f"All download attempts failed: {track.artist} - {track.title}"
+    logger.error(msg)
+    send_notification("StreamFLACr: Download Failed", msg)
     return None
 
 
@@ -77,14 +90,12 @@ async def sync_playlist(
     slsk: SoulseekDownloader,
     state: StateManager,
 ) -> None:
-    """Check a single playlist for new tracks and download FLAC for them."""
+    """Check a single playlist for new tracks and download FLAC/MP3 for them."""
     playlist_url = playlist.url
     playlist_name = playlist.title
 
-    # Ensure there's a smart crate for this playlist
     ensure_smart_crate(playlist_name)
 
-    # Fetch current tracks
     tracks = fetch_playlist_tracks(playlist_url)
     if not tracks:
         logger.debug("No tracks found in playlist: %s", playlist_name)
@@ -106,14 +117,12 @@ async def sync_playlist(
         except Exception as e:
             logger.error("Error processing track %s: %s", track.title, e)
 
-    # Mark all new tracks as seen (even failed ones)
     state.mark_seen(playlist_url, list(new_ids))
     state.save()
 
 
 async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
     """Main polling loop: discover all playlists, check each for new tracks."""
-    # Initial sync: discover all existing playlists and mark their tracks as seen
     existing_playlists = discover_user_playlists(
         f"{SOUNDCLOUD_USER_URL}/sets" if SOUNDCLOUD_USER_URL else None
     )
@@ -123,7 +132,6 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
         playlist.tracks = tracks
         state.set_playlist_name(playlist.url, playlist.title)
         state.mark_seen(playlist.url, [t.track_id for t in tracks])
-        # Create smart crate for each existing playlist
         ensure_smart_crate(playlist.title)
     state.save()
 
@@ -141,7 +149,6 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
         await asyncio.sleep(SOUNDCLOUD_POLL_INTERVAL)
 
         try:
-            # Re-discover playlists to catch newly created ones
             current_playlists = discover_user_playlists(
                 f"{SOUNDCLOUD_USER_URL}/sets" if SOUNDCLOUD_USER_URL else None
             )
@@ -149,7 +156,6 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
             logger.error("Error discovering playlists: %s", e)
             continue
 
-        # Check for newly created playlists
         for playlist in current_playlists:
             if playlist.url not in known_playlist_urls:
                 logger.info("New playlist detected: '%s'", playlist.title)
@@ -157,7 +163,6 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
                 ensure_smart_crate(playlist.title)
                 known_playlist_urls.add(playlist.url)
 
-        # Sync each playlist
         for playlist in current_playlists:
             try:
                 await sync_playlist(playlist, slsk, state)

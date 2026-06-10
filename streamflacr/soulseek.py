@@ -20,6 +20,8 @@ from .config import (
 
 logger = logging.getLogger(__name__)
 
+MIN_MP3_BITRATE = 320
+
 
 class SoulseekDownloader:
     """Manages a persistent Soulseek connection for searching and downloading."""
@@ -29,7 +31,6 @@ class SoulseekDownloader:
         self._download_dir = str(DOWNLOAD_DIR)
 
     async def connect(self) -> None:
-        """Connect and login to the Soulseek network."""
         settings = Settings(
             credentials=CredentialsSettings(
                 username=SLSK_USERNAME,
@@ -47,36 +48,56 @@ class SoulseekDownloader:
         logger.info("Logged into Soulseek as %s", SLSK_USERNAME)
 
     async def disconnect(self) -> None:
-        """Gracefully disconnect from Soulseek."""
         if self.client:
             await self.client.stop()
             self.client = None
 
-    async def search_flac(self, artist: str, title: str, timeout: int = 30) -> list[dict]:
-        """Search for a FLAC version of a track.
+    async def search_track(
+        self, artist: str, title: str, timeout: int = 30
+    ) -> list[dict]:
+        """Search for a track on Soulseek, prioritizing FLAC then 320kbps MP3.
 
-        Returns a list of candidate dicts with keys:
-            username, filename, filesize, bitrate, has_free_slots, avg_speed, remote_path
-        Sorted by preference (free slots + speed, then filesize).
+        Returns candidates sorted by quality tier then preference:
+          - Tier 0: FLAC (lossless, highest quality)
+          - Tier 1: 320kbps MP3 (fallback, minimum acceptable quality)
+
+        Each candidate dict has: username, filename, filesize, bitrate,
+        has_free_slots, avg_speed, remote_path, tier.
         """
         if not self.client:
             raise RuntimeError("Not connected to Soulseek")
 
-        query = f'"{artist}" "{title}" flac'
+        query = f'"{artist}" "{title}"'
         logger.info("Searching Soulseek: %s", query)
 
         search_manager = self.client.search_manager
         request: SearchRequest = await search_manager.search(query)
 
-        # Wait for results to accumulate
         await asyncio.sleep(timeout)
 
         candidates = []
         for result in request.results:
             for item in result.shared_items:
                 filename = item.filename
-                if not filename.lower().endswith(".flac"):
+                lower = filename.lower()
+
+                # Determine quality tier
+                if lower.endswith(".flac"):
+                    tier = 0
+                elif lower.endswith(".mp3"):
+                    attrs = item.get_attribute_map()
+                    bitrate = attrs.get(AttributeKey.BITRATE, 0)
+                    if bitrate < MIN_MP3_BITRATE:
+                        logger.debug(
+                            "Skipping %dkbps MP3 (below %dkbps minimum): %s",
+                            bitrate, MIN_MP3_BITRATE, filename,
+                        )
+                        continue
+                    tier = 1
+                else:
+                    # Skip non-audio and other formats
                     continue
+
                 filesize_mb = item.filesize / (1024 * 1024)
                 if filesize_mb < MIN_FILESIZE_MB:
                     continue
@@ -92,14 +113,22 @@ class SoulseekDownloader:
                     "has_free_slots": result.has_free_slots,
                     "avg_speed": result.avg_speed,
                     "remote_path": filename,
+                    "tier": tier,
                 })
 
+        # Sort: FLAC before MP3, then prefer free slots + fast speed + larger file
         def sort_key(c):
             slot_pref = 0 if (PREFER_FREE_SLOTS and c["has_free_slots"]) else 1
-            return (slot_pref, -c["avg_speed"], -c["filesize"])
+            return (c["tier"], slot_pref, -c["avg_speed"], -c["filesize"])
 
         candidates.sort(key=sort_key)
-        logger.info("Found %d FLAC candidates for %s - %s", len(candidates), artist, title)
+
+        flac_count = sum(1 for c in candidates if c["tier"] == 0)
+        mp3_count = sum(1 for c in candidates if c["tier"] == 1)
+        logger.info(
+            "Found %d candidates for %s - %s (%d FLAC, %d 320kbps MP3)",
+            len(candidates), artist, title, flac_count, mp3_count,
+        )
         return candidates
 
     async def download(self, username: str, remote_path: str) -> Path | None:
