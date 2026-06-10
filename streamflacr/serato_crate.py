@@ -60,13 +60,55 @@ def backup_serato_changes(*paths: Path) -> None:
     logger.info("Backed up %d file(s) to %s", len(existing), backup_dest.name)
 
 
+def _ensure_serato_tools():
+    """Import serato_tools.smart_crate, auto-installing with --no-deps if missing.
+
+    serato-tools depends on librosa (which pulls in numba/llvmlite that fails to
+    build), but we only use smart_crate.py which needs none of that.
+    """
+    try:
+        from serato_tools.smart_crate import SmartCrate
+        return SmartCrate
+    except ImportError:
+        pass
+
+    import subprocess
+    import sys
+
+    logger.info("Installing serato-tools (SmartCrate support)...")
+    python = sys.executable
+
+    # Try uv first (faster), then pip
+    for cmd in (
+        ["uv", "pip", "install", "--python", python, "serato-tools", "--no-deps"],
+        [python, "-m", "pip", "install", "serato-tools", "--no-deps"],
+    ):
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            logger.info("serato-tools installed successfully")
+            break
+    else:
+        logger.error("Could not install serato-tools; smart crate creation will be skipped")
+        logger.error("Install manually: %s -m pip install serato-tools --no-deps", python)
+        return None
+
+    try:
+        from serato_tools.smart_crate import SmartCrate
+        return SmartCrate
+    except ImportError:
+        logger.error("serato-tools import failed after install")
+        return None
+
+
 def ensure_smart_crate(playlist_name: str) -> Path | None:
     """Create or update a Serato smart crate that matches on Label IS playlist_name.
 
     Backs up the file before any modification. Never deletes existing crates.
-    Returns the path to the .scrate file.
+    Returns the path to the .scrate file, or None if serato-tools can't be installed.
     """
-    from serato_tools.smart_crate import SmartCrate
+    SmartCrate = _ensure_serato_tools()
+    if SmartCrate is None:
+        return None
 
     safe_name = playlist_name.replace("/", "≫").replace("\\", "≫")
     smart_crates_dir = SERATO_DIR / "SmartCrates"

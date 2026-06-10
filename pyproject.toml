@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "streamflacr"
-version = "0.10.3"
+version = "0.11.0"
 description = "Auto-download FLAC from Soulseek for SoundCloud playlist additions"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,7 +18,6 @@ dependencies = [
     "python-dotenv>=1.2",
     "pydantic-settings>=2.4",
     "requests>=2.31",
-    "serato-tools>=4.0",
 ]
 
 [project.scripts]
@@ -27,8 +26,3 @@ streamflacr = "streamflacr.cli:main"
 [tool.setuptools.packages.find]
 include = ["streamflacr*"]
 
-[tool.uv]
-# serato-tools depends on librosa (which pulls in numba/llvmlite that fail to build),
-# but we only use smart_crate.py which has zero dependency on librosa.
-# This override makes librosa unsatisfiable so the resolver skips it.
-override-dependencies = ["librosa; python_version < '0'"]
