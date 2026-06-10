@@ -54,7 +54,10 @@ def main() -> None:
     )
 
     from .__main__ import amain
-    asyncio.run(amain(daemon=args.daemon))
+    try:
+        asyncio.run(amain(daemon=args.daemon))
+    except KeyboardInterrupt:
+        print("\n  Stopped.")
 
 
 if __name__ == "__main__":

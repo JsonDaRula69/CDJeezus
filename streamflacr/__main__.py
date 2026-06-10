@@ -255,8 +255,13 @@ async def amain(daemon: bool = False) -> None:
             await poll_loop(slsk, state)
         else:
             await run_once(slsk, state)
+    except KeyboardInterrupt:
+        logger.info("Interrupted, shutting down...")
     finally:
-        await slsk.disconnect()
+        try:
+            await slsk.disconnect()
+        except Exception:
+            pass  # best-effort disconnect during shutdown
 
 
 if __name__ == "__main__":
