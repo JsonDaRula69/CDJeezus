@@ -56,25 +56,31 @@ async def process_new_track(
     Downloads one file per distinct version group (e.g. Remix, Original Mix).
     Returns list of successfully downloaded paths.
     """
-    logger.info("Processing: %s - %s", track.artist, track.title)
+    # Use canonical_artist (publisher_metadata.artist) for search and display
+    # since track.artist is the SoundCloud profile handle (e.g. "heisrema")
+    # while canonical_artist is the real name (e.g. "Rema")
+    search_artist = track.canonical_artist or track.artist
+    display_artist = track.canonical_artist or track.artist
 
-    raw_candidates = await slsk.search_track(track.artist, track.title, timeout=SEARCH_TIMEOUT)
+    logger.info("Processing: %s - %s", display_artist, track.title)
+
+    raw_candidates = await slsk.search_track(search_artist, track.title, timeout=SEARCH_TIMEOUT)
 
     if not raw_candidates:
-        msg = f"No FLAC or 320kbps MP3 found: {track.artist} - {track.title}"
+        msg = f"No FLAC or 320kbps MP3 found: {display_artist} - {track.title}"
         logger.warning(msg)
         send_notification("StreamFLACr: Not Found", msg)
         return []
 
     candidates = filter_and_rank_candidates(
-        sc_artist=track.canonical_artist or track.artist,
+        sc_artist=search_artist,
         sc_title=track.title,
         sc_duration_s=track.duration_s,
         candidates=raw_candidates,
     )
 
     if not candidates:
-        msg = f"No matching result on Soulseek: {track.artist} - {track.title}"
+        msg = f"No matching result on Soulseek: {display_artist} - {track.title}"
         logger.warning(msg)
         send_notification("StreamFLACr: No Match", msg)
         return []
@@ -108,7 +114,7 @@ async def process_new_track(
             # Tag metadata while file is still in staging dir
             tag_file(
                 filepath=local_path,
-                artist=track.canonical_artist or track.artist,
+                artist=display_artist,
                 title=track.title,
                 playlist_name=playlist_name,
                 album=track.album,
@@ -129,7 +135,7 @@ async def process_new_track(
             state.mark_downloaded(
                 playlist_url=playlist_url,
                 track_id=track.track_id,
-                artist=track.artist,
+                artist=display_artist,
                 title=track.title,
                 local_path=str(local_path),
             )
@@ -140,22 +146,22 @@ async def process_new_track(
             quality = "FLAC" if local_path.suffix.lower() == ".flac" else "320kbps MP3"
             send_notification(
                 "StreamFLACr",
-                f"Downloaded ({quality}{ver_label}): {track.artist} - {track.title}",
+                f"Downloaded ({quality}{ver_label}): {display_artist} - {track.title}",
             )
         # If download failed, continue to next candidate (same or different version)
 
     if not downloaded:
-        msg = f"All download attempts failed: {track.artist} - {track.title}"
+        msg = f"All download attempts failed: {display_artist} - {track.title}"
         logger.error(msg)
         send_notification("StreamFLACr: Download Failed", msg)
     elif len(downloaded) > 1:
         logger.info(
             "Downloaded %d versions for '%s - %s' (user can delete duplicates)",
-            len(downloaded), track.artist, track.title,
+            len(downloaded), display_artist, track.title,
         )
         send_notification(
             "StreamFLACr",
-            f"{len(downloaded)} versions downloaded: {track.artist} - {track.title}",
+            f"{len(downloaded)} versions downloaded: {display_artist} - {track.title}",
         )
 
     return downloaded
