@@ -1,9 +1,11 @@
 """Audio metadata tagging, verification, and enrichment via mutagen.
 
-Writes artist, title, label (set to the SoundCloud playlist name),
-and other standard fields. Supports both FLAC (Vorbis comments) and
-MP3 (ID3v2 tags). Verifies existing metadata and fills gaps from
-SoundCloud data.
+Writes artist, title, comment (set to the SoundCloud playlist name),
+and other standard fields. The comment field is used because Serato
+reliably reads it during import and it's visible in the library view.
+The label field is also set for smart crate matching.
+
+Supports both FLAC (Vorbis comments) and MP3 (ID3v2 tags).
 """
 
 import logging
@@ -23,8 +25,9 @@ def tag_file(
 ) -> None:
     """Write core metadata to a FLAC or MP3 file.
 
-    The 'label' field is set to the SoundCloud playlist name so
-    Serato smart crates can match on it.
+    The 'comment' field is set to the SoundCloud playlist name so it's
+    visible in Serato's library and reliably scanned on import.
+    The 'label' field is also set for smart crate matching.
     """
     if filepath.suffix.lower() == ".flac":
         _tag_flac(filepath, artist, title, playlist_name, album, genre, year)
@@ -35,7 +38,7 @@ def tag_file(
         return
 
     logger.info(
-        "Tagged %s: artist=%s, title=%s, label=%s",
+        "Tagged %s: artist=%s, title=%s, comment=%s",
         filepath.name, artist, title, playlist_name,
     )
 
@@ -48,7 +51,7 @@ def verify_metadata(filepath: Path) -> dict:
             from mutagen.flac import FLAC
             audio = FLAC(str(filepath))
             for key in ("artist", "title", "album", "genre", "date", "label",
-                        "isrc", "composer", "publisher"):
+                        "comment", "isrc", "composer", "publisher"):
                 if key in audio:
                     result[key] = audio[key][0] if isinstance(audio[key], list) else audio[key]
         elif filepath.suffix.lower() == ".mp3":
@@ -61,6 +64,11 @@ def verify_metadata(filepath: Path) -> dict:
             for key, frame_id in mapping.items():
                 if frame_id in audio:
                     result[key] = str(audio[frame_id])
+            # Comment is in COMM frames
+            for frame in audio.getall("COMM"):
+                if frame.desc == "" or frame.desc == "StreamFLACr":
+                    result["comment"] = str(frame.text[0]) if frame.text else ""
+                    break
     except Exception as e:
         logger.debug("Could not read metadata from %s: %s", filepath.name, e)
     return result
@@ -73,11 +81,9 @@ def enrich_metadata(
 ) -> None:
     """Cross-check downloaded file's metadata against SoundCloud data and fill gaps.
 
-    The label/publisher field is always overwritten with the playlist name
-    since that's our core mechanism for Serato smart crates. Artist and title
-    are overwritten with the canonical SoundCloud values to ensure consistency.
-    Other fields (album, genre, ISRC, composer) are filled in only if missing
-    from the downloaded file.
+    The comment field is always overwritten with the playlist name since
+    that's our primary mechanism for Serato smart crates. The label field
+    is also set. Other fields are filled only if missing from the file.
     """
     existing = verify_metadata(filepath)
 
@@ -85,7 +91,6 @@ def enrich_metadata(
     updates: dict = {}
 
     # Artist/title: always set from SoundCloud (canonical source)
-    # These must be accurate for the Serato library
     sc_artist = sc_track.canonical_artist or sc_track.artist
     existing_artist = existing.get("artist", "")
     if existing_artist and existing_artist.lower() != sc_artist.lower():
@@ -132,6 +137,7 @@ def _tag_flac(filepath, artist, title, playlist_name, album, genre, year):
     audio = FLAC(str(filepath))
     audio["artist"] = artist
     audio["title"] = title
+    audio["comment"] = playlist_name
     audio["label"] = playlist_name
     if album:
         audio["album"] = album
@@ -143,10 +149,12 @@ def _tag_flac(filepath, artist, title, playlist_name, album, genre, year):
 
 
 def _tag_mp3(filepath, artist, title, playlist_name, album, genre, year):
-    from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, TPUB
+    from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, TPUB, COMM
     audio = ID3(str(filepath))
     audio.add(TPE1(encoding=3, text=artist))
     audio.add(TIT2(encoding=3, text=title))
+    # COMM with description "StreamFLACr" so we can identify our own comments
+    audio.add(COMM(encoding=3, lang="eng", desc="StreamFLACr", text=playlist_name))
     audio.add(TPUB(encoding=3, text=playlist_name))
     if album:
         audio.add(TALB(encoding=3, text=album))
@@ -166,7 +174,7 @@ def _enrich_flac(filepath: Path, updates: dict):
 
 
 def _enrich_mp3(filepath: Path, updates: dict):
-    from mutagen.id3 import ID3, TALB, TCON, TCOM, TDRC, TIPL
+    from mutagen.id3 import ID3, TALB, TCON, TCOM, TDRC, TIPL, COMM
     audio = ID3(str(filepath))
     frame_map = {
         "album": lambda v: TALB(encoding=3, text=v),
