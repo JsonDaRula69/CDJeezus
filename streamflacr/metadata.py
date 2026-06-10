@@ -1,8 +1,9 @@
-"""Audio metadata tagging via mutagen.
+"""Audio metadata tagging, verification, and enrichment via mutagen.
 
 Writes artist, title, label (set to the SoundCloud playlist name),
 and other standard fields. Supports both FLAC (Vorbis comments) and
-MP3 (ID3v2 tags).
+MP3 (ID3v2 tags). Verifies existing metadata and fills gaps from
+SoundCloud data.
 """
 
 import logging
@@ -20,7 +21,7 @@ def tag_file(
     genre: str | None = None,
     year: str | None = None,
 ) -> None:
-    """Write metadata to a FLAC or MP3 file.
+    """Write core metadata to a FLAC or MP3 file.
 
     The 'label' field is set to the SoundCloud playlist name so
     Serato smart crates can match on it.
@@ -39,17 +40,95 @@ def tag_file(
     )
 
 
-def _tag_flac(
-    filepath: Path,
-    artist: str,
-    title: str,
-    playlist_name: str,
-    album: str | None,
-    genre: str | None,
-    year: str | None,
-) -> None:
-    from mutagen.flac import FLAC
+def verify_metadata(filepath: Path) -> dict:
+    """Read existing metadata from a file. Returns a dict of present fields."""
+    result = {}
+    try:
+        if filepath.suffix.lower() == ".flac":
+            from mutagen.flac import FLAC
+            audio = FLAC(str(filepath))
+            for key in ("artist", "title", "album", "genre", "date", "label",
+                        "isrc", "composer", "publisher"):
+                if key in audio:
+                    result[key] = audio[key][0] if isinstance(audio[key], list) else audio[key]
+        elif filepath.suffix.lower() == ".mp3":
+            from mutagen.id3 import ID3
+            audio = ID3(str(filepath))
+            mapping = {
+                "artist": "TPE1", "title": "TIT2", "album": "TALB",
+                "genre": "TCON", "date": "TDRC", "publisher": "TPUB",
+            }
+            for key, frame_id in mapping.items():
+                if frame_id in audio:
+                    result[key] = str(audio[frame_id])
+    except Exception as e:
+        logger.debug("Could not read metadata from %s: %s", filepath.name, e)
+    return result
 
+
+def enrich_metadata(
+    filepath: Path,
+    sc_track: "TrackInfo",
+    playlist_name: str,
+) -> None:
+    """Cross-check downloaded file's metadata against SoundCloud data and fill gaps.
+
+    The label/publisher field is always overwritten with the playlist name
+    since that's our core mechanism for Serato smart crates. Artist and title
+    are overwritten with the canonical SoundCloud values to ensure consistency.
+    Other fields (album, genre, ISRC, composer) are filled in only if missing
+    from the downloaded file.
+    """
+    existing = verify_metadata(filepath)
+
+    # Determine what needs updating
+    updates: dict = {}
+
+    # Artist/title: always set from SoundCloud (canonical source)
+    # These must be accurate for the Serato library
+    sc_artist = sc_track.canonical_artist or sc_track.artist
+    existing_artist = existing.get("artist", "")
+    if existing_artist and existing_artist.lower() != sc_artist.lower():
+        logger.info(
+            "Correcting artist: '%s' -> '%s' (from SoundCloud)",
+            existing_artist, sc_artist,
+        )
+
+    # Album: fill from SoundCloud if missing in file
+    if not existing.get("album") and sc_track.album:
+        updates["album"] = sc_track.album
+        logger.info("Filling missing album: '%s'", sc_track.album)
+
+    # Genre: fill from SoundCloud if missing
+    if not existing.get("genre") and sc_track.genre:
+        updates["genre"] = sc_track.genre
+        logger.info("Filling missing genre: '%s'", sc_track.genre)
+
+    # ISRC: fill from SoundCloud if missing
+    if not existing.get("isrc") and sc_track.isrc:
+        updates["isrc"] = sc_track.isrc
+        logger.info("Filling missing ISRC: '%s'", sc_track.isrc)
+
+    # Composer: fill from SoundCloud publisher_metadata.writer_composer
+    if not existing.get("composer") and sc_track.writer_composer:
+        updates["composer"] = sc_track.writer_composer
+        logger.info("Filling missing composer: '%s'", sc_track.writer_composer)
+
+    # Apply updates
+    if not updates:
+        logger.debug("Metadata already complete for %s", filepath.name)
+        return
+
+    if filepath.suffix.lower() == ".flac":
+        _enrich_flac(filepath, updates)
+    elif filepath.suffix.lower() == ".mp3":
+        _enrich_mp3(filepath, updates)
+
+    logger.info("Enriched metadata for %s: %s", filepath.name, list(updates.keys()))
+
+
+def _tag_flac(filepath, artist, title, playlist_name, album, genre, year):
+    from mutagen.flac import FLAC
     audio = FLAC(str(filepath))
     audio["artist"] = artist
     audio["title"] = title
@@ -63,25 +142,40 @@ def _tag_flac(
     audio.save()
 
 
-def _tag_mp3(
-    filepath: Path,
-    artist: str,
-    title: str,
-    playlist_name: str,
-    album: str | None,
-    genre: str | None,
-    year: str | None,
-) -> None:
+def _tag_mp3(filepath, artist, title, playlist_name, album, genre, year):
     from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, TPUB
-
     audio = ID3(str(filepath))
-    audio.add(TPE1(encoding=3, text=artist))       # Artist
-    audio.add(TIT2(encoding=3, text=title))         # Title
-    audio.add(TPUB(encoding=3, text=playlist_name))  # Label / Publisher
+    audio.add(TPE1(encoding=3, text=artist))
+    audio.add(TIT2(encoding=3, text=title))
+    audio.add(TPUB(encoding=3, text=playlist_name))
     if album:
         audio.add(TALB(encoding=3, text=album))
     if genre:
         audio.add(TCON(encoding=3, text=genre))
     if year:
         audio.add(TDRC(encoding=3, text=year))
+    audio.save()
+
+
+def _enrich_flac(filepath: Path, updates: dict):
+    from mutagen.flac import FLAC
+    audio = FLAC(str(filepath))
+    for key, val in updates.items():
+        audio[key] = val
+    audio.save()
+
+
+def _enrich_mp3(filepath: Path, updates: dict):
+    from mutagen.id3 import ID3, TALB, TCON, TCOM, TDRC, TIPL
+    audio = ID3(str(filepath))
+    frame_map = {
+        "album": lambda v: TALB(encoding=3, text=v),
+        "genre": lambda v: TCON(encoding=3, text=v),
+        "composer": lambda v: TCOM(encoding=3, text=v),
+        "date": lambda v: TDRC(encoding=3, text=v),
+        "isrc": lambda v: TIPL(encoding=3, text=[f"ISRC: {v}"]),
+    }
+    for key, val in updates.items():
+        if key in frame_map:
+            audio.add(frame_map[key](val))
     audio.save()

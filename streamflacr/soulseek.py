@@ -57,12 +57,9 @@ class SoulseekDownloader:
     ) -> list[dict]:
         """Search for a track on Soulseek, prioritizing FLAC then 320kbps MP3.
 
-        Returns candidates sorted by quality tier then preference:
-          - Tier 0: FLAC (lossless, highest quality)
-          - Tier 1: 320kbps MP3 (fallback, minimum acceptable quality)
-
-        Each candidate dict has: username, filename, filesize, bitrate,
-        has_free_slots, avg_speed, remote_path, tier.
+        Returns raw candidates with duration extracted from attributes.
+        Matching/scoring against the SoundCloud track is done separately
+        by the match module.
         """
         if not self.client:
             raise RuntimeError("Not connected to Soulseek")
@@ -81,7 +78,6 @@ class SoulseekDownloader:
                 filename = item.filename
                 lower = filename.lower()
 
-                # Determine quality tier
                 if lower.endswith(".flac"):
                     tier = 0
                 elif lower.endswith(".mp3"):
@@ -95,7 +91,6 @@ class SoulseekDownloader:
                         continue
                     tier = 1
                 else:
-                    # Skip non-audio and other formats
                     continue
 
                 filesize_mb = item.filesize / (1024 * 1024)
@@ -104,19 +99,21 @@ class SoulseekDownloader:
 
                 attrs = item.get_attribute_map()
                 bitrate = attrs.get(AttributeKey.BITRATE, 0)
+                duration_s = attrs.get(AttributeKey.DURATION, 0) or None
 
                 candidates.append({
                     "username": result.username,
                     "filename": filename,
                     "filesize": item.filesize,
                     "bitrate": bitrate,
+                    "duration_s": duration_s,
                     "has_free_slots": result.has_free_slots,
                     "avg_speed": result.avg_speed,
                     "remote_path": filename,
                     "tier": tier,
                 })
 
-        # Sort: FLAC before MP3, then prefer free slots + fast speed + larger file
+        # Initial sort: quality tier, then free slots + speed + filesize
         def sort_key(c):
             slot_pref = 0 if (PREFER_FREE_SLOTS and c["has_free_slots"]) else 1
             return (c["tier"], slot_pref, -c["avg_speed"], -c["filesize"])

@@ -15,7 +15,8 @@ from .config import (
     SOUNDCLOUD_POLL_INTERVAL,
     SOUNDCLOUD_USER_URL,
 )
-from .metadata import tag_file
+from .match import filter_and_rank_candidates
+from .metadata import tag_file, verify_metadata, enrich_metadata
 from .notify import send_notification
 from .serato_crate import ensure_smart_crate
 from .soundcloud import (
@@ -37,36 +38,63 @@ async def process_new_track(
     state: StateManager,
     playlist_url: str,
 ) -> Path | None:
-    """Search, download, tag, and integrate a single track.
+    """Search, match, download, tag, and integrate a single track.
 
     Priority: FLAC > 320kbps MP3. Alerts the user if nothing is found.
-    Returns local path on success, None on failure.
     """
     logger.info("Processing: %s - %s", track.artist, track.title)
 
-    candidates = await slsk.search_track(track.artist, track.title, timeout=SEARCH_TIMEOUT)
+    # Search Soulseek
+    raw_candidates = await slsk.search_track(track.artist, track.title, timeout=SEARCH_TIMEOUT)
 
-    if not candidates:
+    if not raw_candidates:
         msg = f"No FLAC or 320kbps MP3 found: {track.artist} - {track.title}"
         logger.warning(msg)
         send_notification("StreamFLACr: Not Found", msg)
         return None
 
-    # Log what we found
+    # Score and filter candidates against the SoundCloud track
+    candidates = filter_and_rank_candidates(
+        sc_artist=track.canonical_artist or track.artist,
+        sc_title=track.title,
+        sc_duration_s=track.duration_s,
+        candidates=raw_candidates,
+    )
+
+    if not candidates:
+        msg = f"No matching result on Soulseek: {track.artist} - {track.title}"
+        logger.warning(msg)
+        send_notification("StreamFLACr: No Match", msg)
+        return None
+
     top = candidates[0]
     fmt = "FLAC" if top["tier"] == 0 else f"{top['bitrate']}kbps MP3"
-    logger.info("Best candidate: %s (%s) from %s", top["filename"], fmt, top["username"])
+    logger.info(
+        "Best match (score %.2f): %s (%s) from %s",
+        top["match_score"], top["filename"], fmt, top["username"],
+    )
 
-    # Try up to 3 candidates
+    # Try up to 3 matched candidates
     for candidate in candidates[:3]:
         local_path = await slsk.download(candidate["username"], candidate["remote_path"])
         if local_path and local_path.exists():
+            # Verify and enrich metadata from the downloaded file
             tag_file(
                 filepath=local_path,
-                artist=track.artist,
+                artist=track.canonical_artist or track.artist,
                 title=track.title,
                 playlist_name=playlist_name,
+                album=track.album,
+                genre=track.genre,
             )
+
+            # Cross-check: verify the file's existing metadata and fill gaps
+            enrich_metadata(
+                filepath=local_path,
+                sc_track=track,
+                playlist_name=playlist_name,
+            )
+
             state.mark_downloaded(
                 playlist_url=playlist_url,
                 track_id=track.track_id,
@@ -90,7 +118,6 @@ async def sync_playlist(
     slsk: SoulseekDownloader,
     state: StateManager,
 ) -> None:
-    """Check a single playlist for new tracks and download FLAC/MP3 for them."""
     playlist_url = playlist.url
     playlist_name = playlist.title
 
@@ -122,7 +149,6 @@ async def sync_playlist(
 
 
 async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
-    """Main polling loop: discover all playlists, check each for new tracks."""
     existing_playlists = discover_user_playlists(
         f"{SOUNDCLOUD_USER_URL}/sets" if SOUNDCLOUD_USER_URL else None
     )
@@ -171,7 +197,6 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
 
 
 async def run_once(slsk: SoulseekDownloader, state: StateManager) -> None:
-    """Single-pass mode: check all playlists for new tracks, then exit."""
     playlists = discover_user_playlists(
         f"{SOUNDCLOUD_USER_URL}/sets" if SOUNDCLOUD_USER_URL else None
     )
