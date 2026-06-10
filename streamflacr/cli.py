@@ -61,11 +61,23 @@ def main() -> None:
         datefmt="%H:%M:%S",
     )
 
+    # Quiet aioslsk internals: ConnectToPeer failures, port binding errors,
+    # and peer connection noise are normal Soulseek network chatter.
+    # Port binding tracebacks from aioslsk.network.connection are CRITICAL-only
+    # since we gracefully handle that in soulseek.py's connect() fallback.
+    if not args.verbose:
+        logging.getLogger("aioslsk.network.connection").setLevel(logging.CRITICAL)
+        for name in ("aioslsk.network.network", "aioslsk.tasks",
+                     "aioslsk.shares.manager", "aioslsk.distributed",
+                     "aioslsk.network.upnp", "aioslsk.search.manager"):
+            logging.getLogger(name).setLevel(logging.ERROR)
+
     from .__main__ import amain
     try:
         asyncio.run(amain(daemon=args.daemon))
     except KeyboardInterrupt:
-        print("\n  Stopped.")
+        pass
+    print("\n  Stopped.")
 
 
 if __name__ == "__main__":
