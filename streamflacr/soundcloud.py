@@ -199,10 +199,15 @@ def has_oauth() -> bool:
 
 # ── Track / playlist data extraction ────────────────────────────────────
 
-def _track_from_api(track_data: dict) -> TrackInfo:
-    """Build a TrackInfo from a SoundCloud API track object."""
+def _track_from_api(track_data: dict) -> TrackInfo | None:
+    """Build a TrackInfo from a SoundCloud API track object.
+
+    Returns None if the track has no title or artist (incomplete API data).
+    """
     title = track_data.get("title", "")
     artist = track_data.get("user", {}).get("username", "")
+    if not title or not artist:
+        return None
     track_id = str(track_data.get("id", ""))
     permalink = track_data.get("permalink_url", "")
     duration_ms = track_data.get("duration", 0)
@@ -269,7 +274,7 @@ def discover_user_playlists(user_sets_url: str | None = None) -> list[PlaylistIn
             tracks: list[TrackInfo] = []
             raw_tracks = p.get("tracks", [])
             if isinstance(raw_tracks, list):
-                tracks = [_track_from_api(t) for t in raw_tracks if isinstance(t, dict)]
+                tracks = [t for t in (_track_from_api(x) for x in raw_tracks if isinstance(x, dict)) if t is not None]
             results.append(PlaylistInfo(playlist_id=pid, title=title, url=permalink, tracks=tracks))
 
     logger.info("Discovered %d playlists for user %d", len(results), user_id)
@@ -282,7 +287,7 @@ def fetch_playlist_tracks(playlist_url: str) -> list[TrackInfo]:
     """Fetch all tracks from a SoundCloud playlist via API v2."""
     data = _api_get("resolve", {"url": playlist_url})
     if data and isinstance(data.get("tracks"), list) and data["tracks"]:
-        tracks = [_track_from_api(t) for t in data["tracks"]]
+        tracks = [t for t in (_track_from_api(x) for x in data["tracks"]) if t is not None]
         logger.info("API returned %d tracks for playlist '%s'", len(tracks), data.get("title", ""))
         return tracks
 
@@ -291,7 +296,7 @@ def fetch_playlist_tracks(playlist_url: str) -> list[TrackInfo]:
         pid = data["id"]
         full = _api_get(f"playlists/{pid}", {"representation": "full"})
         if full and isinstance(full.get("tracks"), list) and full["tracks"]:
-            tracks = [_track_from_api(t) for t in full["tracks"]]
+            tracks = [t for t in (_track_from_api(x) for x in full["tracks"]) if t is not None]
             logger.info("Direct playlist API returned %d tracks for '%s'", len(tracks), full.get("title", ""))
             return tracks
 

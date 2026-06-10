@@ -1,2 +1,2 @@
 """StreamFLACr - Auto-download FLAC from Soulseek for SoundCloud playlist additions."""
-__version__ = "0.7.1"
+__version__ = "0.8.0"
