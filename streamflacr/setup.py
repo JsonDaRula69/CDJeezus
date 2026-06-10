@@ -416,7 +416,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
     print()
     print("  All your SoundCloud playlists are now being monitored.")
     print("  New tracks will be auto-downloaded as FLAC and tagged with")
-    print("  the playlist name as the Label field for Serato smart crates.")
+    print("  the playlist name as the Comment field for Serato smart crates.")
     print()
     print("  Run now:       streamflacr")
     print("  Run as daemon:  streamflacr --daemon")

@@ -1,11 +1,9 @@
 """Serato smart crate management via serato-tools.
 
-Creates a smart crate per SoundCloud playlist with two rules:
+Creates a smart crate per SoundCloud playlist with a single rule:
     Comment IS <playlist_name>
-    Label IS <playlist_name>
-This dual-rule approach ensures reliable matching: the comment field
-is always written by StreamFLACr and is reliably scanned by Serato
-during Auto Import. The label field provides redundancy.
+The comment field is reliably written by StreamFLACr and consistently
+read by Serato during Auto Import scanning.
 
 Serato data is highly sensitive — we back up before any modification
 and never delete existing crates or files.
@@ -104,11 +102,10 @@ def _ensure_serato_tools():
 
 
 def ensure_smart_crate(playlist_name: str) -> Path | None:
-    """Create or update a Serato smart crate with Comment IS and Label IS rules.
+    """Create or update a Serato smart crate with Comment IS <playlist_name>.
 
-    Uses Comment as the primary match field since it's reliably populated by
-    StreamFLACr and consistently scanned by Serato during Auto Import.
-    Also includes a Label IS rule as a secondary match for redundancy.
+    The comment field is reliably written by StreamFLACr and consistently
+    read by Serato during Auto Import scanning.
 
     Backs up the file before any modification. Never deletes existing crates.
     Returns the path to the .scrate file, or None if serato-tools can't be installed.
@@ -127,14 +124,14 @@ def ensure_smart_crate(playlist_name: str) -> Path | None:
         backup_serato_changes(scrate_path)
         logger.info("Smart crate already exists: %s", scrate_path.name)
         sc = SmartCrate(str(scrate_path))
-        _ensure_crate_rules(sc, playlist_name)
+        _ensure_comment_rule(sc, playlist_name)
         sc.save()
         return scrate_path
 
     sc = SmartCrate(str(scrate_path))
-    _ensure_crate_rules(sc, playlist_name)
+    _ensure_comment_rule(sc, playlist_name)
 
-    # Enable live update so Serato refreshes automatically
+    # Enable live update and match-all so Serato refreshes automatically
     for i, (f, v) in enumerate(sc.entries):
         if f == SmartCrate.Fields.SMARTCRATE_LIVE_UPDATE:
             sc.entries[i] = (f, [("brut", True)])
@@ -146,15 +143,6 @@ def ensure_smart_crate(playlist_name: str) -> Path | None:
     return scrate_path
 
 
-def _ensure_crate_rules(sc, playlist_name: str) -> None:
-    """Set the smart crate rules: Comment IS and Label IS playlist_name.
-
-    Uses BOTH Comment and Label fields for maximum compatibility.
-    Comment is the primary match since it's always written by StreamFLACr
-    and reliably read by Serato during Auto Import. Label provides a
-    secondary match for users who may already have label-based workflows.
-    """
-    # Primary rule: Comment IS <playlist_name>
+def _ensure_comment_rule(sc, playlist_name: str) -> None:
+    """Set the smart crate rule to Comment IS <playlist_name>."""
     sc.set_rule(sc.RuleField.COMMENT, sc.RuleComparison.STR_IS, playlist_name)
-    # Secondary rule: Label IS <playlist_name>
-    sc.add_rule(sc.RuleField.LABEL, sc.RuleComparison.STR_IS, playlist_name)

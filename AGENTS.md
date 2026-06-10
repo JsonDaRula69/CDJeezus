@@ -1,6 +1,6 @@
 # StreamFLACr — Project Knowledge Base
 
-**Last updated:** v0.16.0
+**Last updated:** v0.19.1
 **Stack:** Python 3.11+, macOS, aioslsk, mutagen, serato-tools, pydantic-settings
 
 ## Overview
@@ -19,7 +19,8 @@ streamflacr/
 ├── soulseek.py           # Search/download via aioslsk; graceful port conflict handling
 ├── match.py              # Fuzzy matching: filename parsing, version descriptors, scoring
 ├── metadata.py           # FLAC (Vorbis) + MP3 (ID3v2) tagging; verify + enrich from SC data
-├── serato_crate.py       # Smart crate creation via serato-tools; backup before write
+├── serato_crate.py       # Smart crate: Comment IS <playlist_name> rule; backup before write
+├── serato_watch.py       # Detect Serato running; flush staging → Auto Import on exit
 ├── notify.py             # macOS notifications via osascript
 ├── setup.py              # Interactive setup wizard, full_uninstall(), LaunchDaemon management
 └── state.py              # JSON state file tracking seen tracks and download history
@@ -34,6 +35,7 @@ streamflacr/
 | Change matching algorithm | `match.py` | `filter_and_rank_candidates()` — `HIGH_CONFIDENCE_SCORE = 0.70` |
 | Change what metadata gets tagged | `metadata.py` | `tag_file()`, `enrich_metadata()` |
 | Change Serato crate behavior | `serato_crate.py` | `ensure_smart_crate()` |
+| Change Serato-aware staging | `serato_watch.py` | `flush_staging_to_import()`, `is_serato_running()` |
 | Add CLI flags | `cli.py` | `main()` — argparse |
 | Change daemon poll interval | `config.py` | `SOUNDCLOUD_POLL_INTERVAL` (default 300s) |
 | Change backup rotation | `serato_crate.py` | `MAX_BACKUPS = 5` |
@@ -55,7 +57,7 @@ SoundCloud API v2 only returns ~5-10 tracks inline per playlist. `fetch_playlist
 All SoundCloud API calls are synchronous (using `requests`) and are wrapped in `asyncio.to_thread()` in the async callers (`sync_playlist`, `poll_loop`, `run_once`) to avoid blocking the aioslsk event loop. The `_rate_limit()` sleep only blocks the thread, not the event loop.
 
 ### Staging Directory for Metadata
-Files download to `_Serato_/.staging/`, get tagged with metadata, then are atomically moved (`os.replace`) to `_Serato_/Auto Import`. This prevents Serato from importing half-tagged files.
+Files download to `~/.config/streamflacr/staging/` (NOT inside `_Serato_`), get tagged with metadata, then are atomically moved (`os.replace`) to `_Serato_/Auto Import`. When Serato DJ is running, files stay in staging; they are flushed to Auto Import only when Serato exits (Serato only scans Auto Import on startup).
 
 ### Download Priority
 FLAC (tier 0) > 320kbps MP3 (tier 1). Never below 320kbps. Files below `MIN_FILESIZE_MB` (5MB) are skipped.
@@ -140,3 +142,7 @@ streamflacr --version
 - **aioslsk connection errors**: `PeerConnectionError` and `ConnectionFailedError` from aioslsk are normal P2P network chatter. Suppressed at CRITICAL level unless `--verbose`.
 - **SoundCloud pagination**: API v2 only returns ~5-10 tracks per playlist inline. `fetch_playlist_tracks()` uses `/playlists/{id}?representation=full` + batch ID fetch to get all tracks.
 - **SoundCloud rate limits**: ~600 requests per 10 minutes. We rate-limit to ~1 req/sec.
+
+- **Smart crate matching**: Uses `Comment IS <playlist_name>` as the sole rule. The `comment` field in FLAC (Vorbis) / MP3 (ID3v2 `COMM` with desc `StreamFLACr`) is set to the playlist name. The `label`/`TPUB` field is NOT used for crate matching — it was migrated away because label is actual metadata about the song's label/record company, not about the playlist.
+- **Serato awareness**: `serato_watch.py` checks if Serato DJ is running. When active, downloaded files stay in staging; they are flushed to Auto Import only after Serato exits. This prevents half-tagged imports and ensures Serato picks them up on next launch. The daemon checks every 30 seconds.
+- **Artist resolution**: Uses `canonical_artist` (from `publisher_metadata.artist`) for Soulseek search, not `track.artist` (which is the SoundCloud handle like "heisrema").
