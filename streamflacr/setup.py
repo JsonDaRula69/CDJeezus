@@ -62,37 +62,16 @@ def check_serato_tools() -> bool:
 
 # ── SoundCloud detection ──────────────────────────────────────────────
 
-def _chrome_cookie_db_path() -> Path | None:
-    chrome_dir = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
-    for profile in ("Default", "Profile 1", "Profile 2", "Profile 3"):
-        cookie_db = chrome_dir / profile / "Cookies"
-        if cookie_db.exists():
-            return cookie_db
-    return None
-
-
 def detect_soundcloud_login() -> bool:
     """Check if the user is logged into SoundCloud in Chrome."""
-    cookie_db = _chrome_cookie_db_path()
-    if not cookie_db:
-        return False
-    try:
-        import sqlite3
-        conn = sqlite3.connect(str(cookie_db))
-        cur = conn.execute(
-            "SELECT COUNT(*) FROM cookies WHERE host_key LIKE '%soundcloud%' AND name = 'oauth_token'"
-        )
-        count = cur.fetchone()[0]
-        conn.close()
-        return count > 0
-    except Exception:
-        return False
+    from .soundcloud import has_oauth
+    return has_oauth()
 
 
 def extract_soundcloud_user_url() -> str | None:
-    """Extract the user's SoundCloud profile URL from Chrome cookies + API.
+    """Extract the user's SoundCloud profile URL from the API.
 
-    Returns the permalink_url (e.g. https://soundcloud.com/username) or None.
+    Requires OAuth token from Chrome cookies.
     """
     from .soundcloud import _api_get
     try:

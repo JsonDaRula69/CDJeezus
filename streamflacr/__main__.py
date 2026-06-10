@@ -16,7 +16,6 @@ from .config import (
     DOWNLOAD_DIR,
     SEARCH_TIMEOUT,
     SOUNDCLOUD_POLL_INTERVAL,
-    SOUNDCLOUD_USER_URL,
 )
 from .match import filter_and_rank_candidates, extract_versions
 from .metadata import tag_file, enrich_metadata
@@ -190,9 +189,7 @@ async def sync_playlist(
 
 
 async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
-    existing_playlists = discover_user_playlists(
-        f"{SOUNDCLOUD_USER_URL}/sets" if SOUNDCLOUD_USER_URL else None
-    )
+    existing_playlists = discover_user_playlists()
 
     for playlist in existing_playlists:
         tracks = fetch_playlist_tracks(playlist.url)
@@ -216,9 +213,7 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
         await asyncio.sleep(SOUNDCLOUD_POLL_INTERVAL)
 
         try:
-            current_playlists = discover_user_playlists(
-                f"{SOUNDCLOUD_USER_URL}/sets" if SOUNDCLOUD_USER_URL else None
-            )
+            current_playlists = discover_user_playlists()
         except Exception as e:
             logger.error("Error discovering playlists: %s", e)
             continue
@@ -238,9 +233,7 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
 
 
 async def run_once(slsk: SoulseekDownloader, state: StateManager) -> None:
-    playlists = discover_user_playlists(
-        f"{SOUNDCLOUD_USER_URL}/sets" if SOUNDCLOUD_USER_URL else None
-    )
+    playlists = discover_user_playlists()
 
     for playlist in playlists:
         try:
