@@ -64,9 +64,14 @@ def main() -> None:
             print("\n  Setup incomplete. Run `streamflacr setup` to try again.\n")
             sys.exit(1)
 
-    # Kill any stale daemon before starting (avoids port conflicts)
-    from .setup import kill_running_daemon
+    # Kill any stale daemon and reload the LaunchAgent so upgrades take effect
+    from .setup import kill_running_daemon, INSTALLED_PLIST
     kill_running_daemon()
+    # If a LaunchAgent plist exists, reload it so the daemon picks up the new version
+    if INSTALLED_PLIST.exists():
+        import subprocess
+        subprocess.run(["launchctl", "unload", str(INSTALLED_PLIST)], capture_output=True, check=False)
+        subprocess.run(["launchctl", "load", str(INSTALLED_PLIST)], capture_output=True, check=False)
 
     # Run the main daemon
     level = logging.DEBUG if args.verbose else logging.INFO
