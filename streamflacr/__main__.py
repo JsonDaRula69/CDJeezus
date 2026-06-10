@@ -171,7 +171,8 @@ async def sync_playlist(
 
     ensure_smart_crate(playlist_name)
 
-    tracks = fetch_playlist_tracks(playlist_url)
+    # Run SoundCloud API call in a thread to avoid blocking the event loop
+    tracks = await asyncio.to_thread(fetch_playlist_tracks, playlist_url)
     if not tracks:
         logger.debug("No tracks found in playlist: %s", playlist_name)
         return
@@ -204,10 +205,11 @@ async def sync_playlist(
 
 
 async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
-    existing_playlists = discover_user_playlists()
+    # Initial sync: discover all playlists and mark existing tracks as seen
+    existing_playlists = await asyncio.to_thread(discover_user_playlists)
 
     for playlist in existing_playlists:
-        tracks = fetch_playlist_tracks(playlist.url)
+        tracks = await asyncio.to_thread(fetch_playlist_tracks, playlist.url)
         playlist.tracks = tracks
         state.set_playlist_name(playlist.url, playlist.title)
         state.mark_seen(playlist.url, [t.track_id for t in tracks])
@@ -228,7 +230,7 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
         await asyncio.sleep(SOUNDCLOUD_POLL_INTERVAL)
 
         try:
-            current_playlists = discover_user_playlists()
+            current_playlists = await asyncio.to_thread(discover_user_playlists)
         except Exception as e:
             logger.error("Error discovering playlists: %s", e)
             continue
@@ -248,7 +250,7 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
 
 
 async def run_once(slsk: SoulseekDownloader, state: StateManager) -> None:
-    playlists = discover_user_playlists()
+    playlists = await asyncio.to_thread(discover_user_playlists)
 
     for playlist in playlists:
         try:

@@ -1,6 +1,6 @@
 # StreamFLACr — Project Knowledge Base
 
-**Last updated:** v0.12.1
+**Last updated:** v0.16.0
 **Stack:** Python 3.11+, macOS, aioslsk, mutagen, serato-tools, pydantic-settings
 
 ## Overview
@@ -48,6 +48,15 @@ streamflacr/
 ### OAuth Retry with Chrome Launch
 When `_get_user_id()` fails (stale token or Chrome not running), it launches Chrome (or SoundCloud PWA if installed at `~/Applications/Chrome Apps.localized/SoundCloud.app`) and retries 3 times with 60s gaps. After all retries fail, sends macOS notification. The 60s `time.sleep()` is blocking but acceptable for a daemon that polls every 5 minutes.
 
+### SoundCloud Track Pagination
+SoundCloud API v2 only returns ~5-10 tracks inline per playlist. `fetch_playlist_tracks()` resolves the playlist, then fetches `/playlists/{id}?representation=full` for complete data. If still incomplete, it extracts track IDs and batch-fetches via `/tracks?ids=...`. `discover_user_playlists()` uses `linked_partitioning` with `next_href` to handle users with more than 50 playlists.
+
+### Non-Blocking SoundCloud Calls
+All SoundCloud API calls are synchronous (using `requests`) and are wrapped in `asyncio.to_thread()` in the async callers (`sync_playlist`, `poll_loop`, `run_once`) to avoid blocking the aioslsk event loop. The `_rate_limit()` sleep only blocks the thread, not the event loop.
+
+### Staging Directory for Metadata
+Files download to `_Serato_/.staging/`, get tagged with metadata, then are atomically moved (`os.replace`) to `_Serato_/Auto Import`. This prevents Serato from importing half-tagged files.
+
 ### Download Priority
 FLAC (tier 0) > 320kbps MP3 (tier 1). Never below 320kbps. Files below `MIN_FILESIZE_MB` (5MB) are skipped.
 
@@ -72,7 +81,7 @@ All paths use `Path.home()`. Config file: `~/.config/streamflacr/.env`. Env vars
 - **Logging**: `streamflacr` logger for app-level events. aioslsk loggers are suppressed to ERROR/CRITICAL unless `--verbose`.
 - **macOS notifications** via `osascript display notification` — no third-party deps.
 - **Non-interactive paths**: All user-facing `input()` calls should have non-interactive fallbacks for CI/testing. Currently setup wizard is fully interactive; `streamflacr setup` is required before first run.
-- **Git commit**: Use `[$omo:debugging]` skill before every commit to verify no code issues.
+- **Git commit**: Use `[$omo:debugging]` skill before every commit to verify no code issues. Use `[$omo:remove-ai-slops]` skill to clean up the code before every commit.
 
 ## Anti-Patterns (This Project)
 
@@ -113,12 +122,13 @@ streamflacr --version
 ## Release Process
 
 1. Bump version in `__init__.py` AND `pyproject.toml`
-2. Commit with `v<version>` message
-3. `git push origin main`
-4. `gh release create v<version> --title "v<version>" --notes "..."`
-5. GitHub Actions publishes to PyPI via trusted publishing (OIDC, no API tokens)
-6. Verify on PyPI: `python3 -c "import urllib.request, json; print(json.loads(urllib.request.urlopen('https://pypi.org/pypi/streamflacr/json').read())['info']['version'])"`
-7. Clean install test: `uv cache clean streamflacr && uv tool install streamflacr --force`
+2. Use `[$omo:debugging]` and `[$omo:remove-ai-slops]` skills before committing
+3. Commit with `v<version>` message
+4. `git push origin main`
+5. `gh release create v<version> --title "v<version>" --notes "..."`
+6. GitHub Actions publishes to PyPI via trusted publishing (OIDC, no API tokens)
+7. Verify on PyPI: `python3 -c "import urllib.request, json; print(json.loads(urllib.request.urlopen('https://pypi.org/pypi/streamflacr/json').read())['info']['version'])"`
+8. Clean install test: `uv cache clean streamflacr && uv tool install streamflacr --force`
 
 ## Notes & Gotchas
 
@@ -127,3 +137,6 @@ streamflacr --version
 - **aioslsk port conflicts**: If ports 60000/60001 are occupied, `soulseek.py` continues without listening ports (download still works, upload won't).
 - **SoundCloud DRM**: We only use API v2 for metadata (never yt-dlp). DRM errors should not occur.
 - **CancelledError on shutdown**: Caught in `amain()` alongside KeyboardInterrupt for clean Ctrl+C.
+- **aioslsk connection errors**: `PeerConnectionError` and `ConnectionFailedError` from aioslsk are normal P2P network chatter. Suppressed at CRITICAL level unless `--verbose`.
+- **SoundCloud pagination**: API v2 only returns ~5-10 tracks per playlist inline. `fetch_playlist_tracks()` uses `/playlists/{id}?representation=full` + batch ID fetch to get all tracks.
+- **SoundCloud rate limits**: ~600 requests per 10 minutes. We rate-limit to ~1 req/sec.

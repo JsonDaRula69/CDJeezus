@@ -266,7 +266,6 @@ def _get_user_id() -> int | None:
 
     # OAuth failed — try launching SoundCloud app (Chrome PWA) or Chrome to refresh session
     import subprocess
-    import time
 
     # Try the SoundCloud Chrome app first (lighter, stays in background)
     sc_app = Path.home() / "Applications" / "Chrome Apps.localized" / "SoundCloud.app"
@@ -303,40 +302,83 @@ def _get_user_id() -> int | None:
 
 
 def discover_user_playlists(user_sets_url: str | None = None) -> list[PlaylistInfo]:
-    """Discover all playlists for the authenticated user via API v2."""
+    """Discover all playlists for the authenticated user via API v2.
+
+    Paginates through all playlists using linked_partitioning.
+    """
     user_id = _get_user_id()
     if not user_id:
         return []
 
-    data = _api_get(f"users/{user_id}/playlists", {"limit": 50, "representation": "full"})
-    if not data:
-        logger.error("Failed to fetch playlists for user %d", user_id)
-        return []
+    all_playlists: list[PlaylistInfo] = []
+    url: str | None = f"https://api-v2.soundcloud.com/users/{user_id}/playlists?limit=50&representation=full"
 
-    playlists_raw: list[dict]
-    if isinstance(data, list):
-        playlists_raw = data
-    elif isinstance(data, dict):
-        playlists_raw = data.get("collection", data.get("playlists", []))
-    else:
-        return []
+    while url:
+        data = _api_get_raw_url(url)
+        if not data:
+            break
 
-    results: list[PlaylistInfo] = []
-    for p in playlists_raw:
-        if not isinstance(p, dict):
-            continue
-        pid = str(p.get("id", ""))
-        title = p.get("title", "?")
-        permalink = p.get("permalink_url", "")
-        if pid and permalink:
+        playlists_raw: list[dict]
+        if isinstance(data, list):
+            playlists_raw = data
+        elif isinstance(data, dict):
+            playlists_raw = data.get("collection", data.get("playlists", []))
+            # Handle linked_partitioning (next_href)
+            url = data.get("next_href")
+        else:
+            break
+
+        for p in playlists_raw:
+            if not isinstance(p, dict):
+                continue
+            pid = str(p.get("id", ""))
+            title = p.get("title", "?")
+            permalink = p.get("permalink_url", "")
+            if not (pid and permalink):
+                continue
             tracks: list[TrackInfo] = []
             raw_tracks = p.get("tracks", [])
             if isinstance(raw_tracks, list):
                 tracks = [t for t in (_track_from_api(x) for x in raw_tracks if isinstance(x, dict)) if t is not None]
-            results.append(PlaylistInfo(playlist_id=pid, title=title, url=permalink, tracks=tracks))
+            all_playlists.append(PlaylistInfo(playlist_id=pid, title=title, url=permalink, tracks=tracks))
 
-    logger.info("Discovered %d playlists for user %d", len(results), user_id)
-    return results
+    logger.info("Discovered %d playlists for user %d", len(all_playlists), user_id)
+    return all_playlists
+
+
+def _api_get_raw_url(url: str) -> dict | None:
+    """Make a rate-limited GET request to a full SoundCloud API URL.
+
+    Handles OAuth/client_id auth like _api_get, but takes a full URL
+    instead of an endpoint path. Used for linked_partitioning pagination.
+    """
+    _rate_limit()
+    token = _get_oauth_token()
+
+    # Attempt 1: OAuth header
+    if token:
+        headers = {"Authorization": f"OAuth {token}"}
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                return resp.json()
+            logger.debug("OAuth attempt on %s returned %d", url, resp.status_code)
+        except requests.RequestException as e:
+            logger.debug("OAuth request failed on %s: %s", url, e)
+
+    # Attempt 2: client_id appended as query param
+    client_id = _get_client_id()
+    sep = "&" if "?" in url else "?"
+    full_url = f"{url}{sep}client_id={client_id}"
+    try:
+        resp = requests.get(full_url, timeout=15)
+        if resp.status_code == 200:
+            return resp.json()
+        logger.debug("client_id attempt on %s returned %d", url, resp.status_code)
+    except requests.RequestException as e:
+        logger.debug("client_id request failed on %s: %s", url, e)
+
+    return None
 
 
 # ── Playlist track fetching ──────────────────────────────────────────────
@@ -345,11 +387,13 @@ def fetch_playlist_tracks(playlist_url: str) -> list[TrackInfo]:
     """Fetch all tracks from a SoundCloud playlist via API v2.
 
     SoundCloud caps the number of tracks returned inline in playlist
-    objects (~5-10), so we resolve the playlist to get its ID, then
-    paginate through the /playlists/{id}/tracks endpoint to get all
-    tracks regardless of playlist size.
+    objects (~5-10). Strategy:
+    1. Resolve the playlist URL to get its ID
+    2. Fetch full playlist data with representation=full
+    3. If we still have fewer tracks than track_count, extract all
+       track IDs from the playlist data and batch-fetch missing ones
     """
-    # Resolve the playlist URL to get its ID and title
+    # Resolve the playlist URL to get its ID
     data = _api_get("resolve", {"url": playlist_url})
     if not data or not data.get("id"):
         logger.warning("Could not resolve playlist: %s", playlist_url)
@@ -357,68 +401,106 @@ def fetch_playlist_tracks(playlist_url: str) -> list[TrackInfo]:
 
     pid = data["id"]
     title = data.get("title", "")
+    track_count = data.get("track_count", 0)
 
-    # Strategy: try the dedicated tracks endpoint first, then fall back to
-    # fetching individual tracks by ID if that endpoint doesn't exist.
-    # SoundCloud API v2 may or may not support /playlists/{id}/tracks.
+    # Fetch the full playlist with representation=full to get all track data
+    full_data = _api_get(f"playlists/{pid}", {"representation": "full"})
+    if full_data and full_data.get("id"):
+        data = full_data
+
+    # Collect track objects and track IDs from all available sources
     all_tracks: list[TrackInfo] = []
-    offset = 0
-    page_limit = 50
+    seen_ids: set[str] = set()
 
-    # Attempt 1: paginated tracks endpoint
-    tracks_endpoint_works = False
-    result = _api_get(f"playlists/{pid}/tracks", {"limit": page_limit, "offset": 0})
-    if result is not None:
-        tracks_endpoint_works = True
-        while True:
-            if isinstance(result, list):
-                page_tracks = [t for t in (_track_from_api(x) for x in result if isinstance(x, dict)) if t is not None]
-            elif isinstance(result, dict):
-                collection = result.get("collection", [])
-                page_tracks = [t for t in (_track_from_api(x) for x in collection if isinstance(x, dict)) if t is not None]
-            else:
-                break
-            all_tracks.extend(page_tracks)
-            if len(page_tracks) < page_limit:
-                break
-            offset += page_limit
-            result = _api_get(f"playlists/{pid}/tracks", {"limit": page_limit, "offset": offset})
+    # Extract tracks from the full playlist data
+    raw_tracks = data.get("tracks", [])
+    if isinstance(raw_tracks, list):
+        for t in _extract_tracks_with_ids(raw_tracks, seen_ids):
+            all_tracks.append(t)
+
+    if len(all_tracks) >= track_count and track_count > 0:
+        logger.info("API returned %d tracks for playlist '%s' (id=%s)", len(all_tracks), title, pid)
+        return all_tracks
+
+    # Still missing tracks — extract ALL track IDs and batch-fetch
+    all_ids = _collect_track_ids(data)
+    missing_ids = [tid for tid in all_ids if tid not in seen_ids]
+
+    if missing_ids:
+        logger.info(
+            "Playlist '%s' has %d tracks but only %d inline; fetching %d by ID",
+            title, track_count, len(all_tracks), len(missing_ids),
+        )
+        for i in range(0, len(missing_ids), 50):
+            batch = missing_ids[i:i + 50]
+            ids_param = ",".join(batch)
+            batch_result = _api_get("tracks", {"ids": ids_param})
+            if batch_result and isinstance(batch_result, list):
+                for t in _extract_tracks_with_ids(batch_result, seen_ids):
+                    all_tracks.append(t)
+
+    # Last resort: if we still don't have enough and track_count > 0,
+    # try the dedicated tracks endpoint with pagination
+    if track_count > 0 and len(all_tracks) < track_count:
+        logger.info(
+            "Still missing tracks for '%s' (%d/%d); trying /playlists/{id}/tracks",
+            title, len(all_tracks), track_count,
+        )
+        offset = 0
+        while len(all_tracks) < track_count:
+            result = _api_get(f"playlists/{pid}/tracks", {"limit": 50, "offset": offset})
             if result is None:
                 break
+            page = result if isinstance(result, list) else result.get("collection", []) if isinstance(result, dict) else []
+            page_tracks = [t for t in (_track_from_api(x) for x in page if isinstance(x, dict)) if t is not None]
+            for t in page_tracks:
+                if t.track_id not in seen_ids:
+                    seen_ids.add(t.track_id)
+                    all_tracks.append(t)
+            if len(page_tracks) < 50:
+                break
+            offset += 50
 
-    # Attempt 2: if tracks endpoint failed, use inline tracks from the resolve response,
-    # then fetch missing tracks individually by ID
-    if not tracks_endpoint_works:
-        inline_tracks = data.get("tracks", [])
-        if isinstance(inline_tracks, list) and inline_tracks:
-            all_tracks = [t for t in (_track_from_api(x) for x in inline_tracks if isinstance(x, dict)) if t is not None]
-
-        # If we got fewer tracks than the playlist reports, fetch the rest by ID
-        track_count = data.get("track_count", 0)
-        if track_count > len(all_tracks):
-            inline_ids = {t.track_id for t in all_tracks}
-            # The resolve response may include track_ids without full data
-            all_track_ids = [str(t.get("id", "")) for t in data.get("tracks", []) if isinstance(t, dict)]
-            missing_ids = [tid for tid in all_track_ids if tid not in inline_ids and tid]
-
-            # Also check the tracks_data field (sometimes present with minimal info)
-            for t_data in data.get("tracks_data", []):
-                if isinstance(t_data, dict):
-                    tid = str(t_data.get("id", ""))
-                    if tid and tid not in inline_ids:
-                        missing_ids.append(tid)
-
-            # Fetch missing tracks in batches of 50
-            for i in range(0, len(missing_ids), 50):
-                batch = missing_ids[i:i + 50]
-                ids_param = ",".join(batch)
-                batch_result = _api_get("tracks", {"ids": ids_param})
-                if batch_result and isinstance(batch_result, list):
-                    batch_tracks = [t for t in (_track_from_api(x) for x in batch_result if isinstance(x, dict)) if t is not None]
-                    all_tracks.extend(batch_tracks)
-
-    logger.info("Fetched %d tracks for playlist '%s' (id=%s)", len(all_tracks), title, pid)
+    logger.info("Fetched %d tracks for playlist '%s' (id=%s, expected=%d)", len(all_tracks), title, pid, track_count)
     return all_tracks
+
+
+def _extract_tracks_with_ids(raw_tracks: list, seen_ids: set[str]) -> list[TrackInfo]:
+    """Parse track objects from API data, skipping duplicates by track ID."""
+    result: list[TrackInfo] = []
+    for item in raw_tracks:
+        if not isinstance(item, dict):
+            continue
+        track = _track_from_api(item)
+        if track and track.track_id not in seen_ids:
+            seen_ids.add(track.track_id)
+            result.append(track)
+    return result
+
+
+def _collect_track_ids(data: dict) -> list[str]:
+    """Extract all track IDs from a playlist response, from any field that may contain them."""
+    ids: list[str] = []
+
+    # Primary: tracks array (may have objects with just id)
+    for t in data.get("tracks", []):
+        if isinstance(t, dict):
+            tid = str(t.get("id", ""))
+            if tid:
+                ids.append(tid)
+
+    # Some responses include tracks_data with minimal info
+    for t in data.get("tracks_data", []):
+        if isinstance(t, dict):
+            tid = str(t.get("id", ""))
+            if tid:
+                ids.append(tid)
+
+    # Some responses include a track_ids list of plain integers
+    for tid in data.get("track_ids", []):
+        ids.append(str(tid))
+
+    return ids
 
 
 def refresh_playlist_tracks(playlist: PlaylistInfo) -> PlaylistInfo:
