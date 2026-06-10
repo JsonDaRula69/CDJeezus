@@ -251,34 +251,81 @@ def _track_from_api(track_data: dict) -> TrackInfo | None:
     )
 
 
+# ── SoundCloud session refresh ───────────────────────────────────────────
+
+def _refresh_soundcloud_session() -> bool:
+    """Refresh the SoundCloud session by reloading an existing tab or opening the app.
+
+    Returns True if a session was found and reloaded/opened.
+    Strategy:
+    1. If the SoundCloud PWA app is running, reload it via AppleScript
+    2. If Chrome has any SoundCloud tabs, reload one
+    3. If neither, open the SoundCloud PWA app or Chrome
+    """
+    import subprocess
+
+    # Try reloading an existing SoundCloud tab via AppleScript
+    # This works for both PWA app windows and regular Chrome tabs
+    reload_script = '''
+    tell application "Google Chrome"
+        set reloaded to false
+        repeat with w in windows
+            repeat with t in tabs of w
+                if URL of t contains "soundcloud.com" then
+                    tell t to reload
+                    set reloaded to true
+                    exit repeat
+                end if
+            end repeat
+            if reloaded then exit repeat
+        end repeat
+        return reloaded
+    end tell
+    '''
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", reload_script],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip().lower() == "true":
+            logger.info("Reloaded existing SoundCloud tab to refresh OAuth token")
+            return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        logger.debug("AppleScript reload attempt failed: %s", e)
+
+    # No existing SoundCloud tab found — open the PWA app or Chrome
+    sc_app = Path.home() / "Applications" / "Chrome Apps.localized" / "SoundCloud.app"
+    if sc_app.exists():
+        logger.info("No SoundCloud tab found; launching SoundCloud app")
+        subprocess.run(["open", "-gja", str(sc_app)], capture_output=True, check=False)
+    else:
+        logger.info("No SoundCloud tab found; launching Chrome to SoundCloud")
+        subprocess.run(["open", "https://soundcloud.com"], capture_output=True, check=False)
+    return True
+
+
 # ── Playlist discovery ──────────────────────────────────────────────────
 
 def _get_user_id() -> int | None:
     """Get the authenticated user's SoundCloud ID via /me.
 
     If the initial attempt fails (OAuth token may be stale or Chrome not running),
-    launches Chrome in the background and retries up to 3 times with 60s gaps.
-    After all retries fail, sends a macOS notification telling the user to sign in.
+    refreshes the SoundCloud session and retries up to 3 times.
+    First retry waits 10s (quick refresh), subsequent retries wait 30s.
+    After all retries fail, sends a macOS notification.
     """
     data = _api_get("me")
     if data:
         return data.get("id")
 
-    # OAuth failed — try launching SoundCloud app (Chrome PWA) or Chrome to refresh session
-    import subprocess
-
-    # Try the SoundCloud Chrome app first (lighter, stays in background)
-    sc_app = Path.home() / "Applications" / "Chrome Apps.localized" / "SoundCloud.app"
-    if sc_app.exists():
-        logger.info("OAuth auth failed; launching SoundCloud app to refresh session")
-        subprocess.run(["open", "-gja", str(sc_app)], capture_output=True, check=False)
-    else:
-        logger.info("OAuth auth failed; launching Chrome to refresh session")
-        subprocess.run(["open", "-gja", "Google Chrome"], capture_output=True, check=False)
+    # OAuth failed — refresh the SoundCloud session to get a fresh token
+    _refresh_soundcloud_session()
 
     for attempt in range(1, 4):
-        wait = 60
-        logger.info("OAuth retry %d/3 in %ds (waiting for Chrome session)...", attempt, wait)
+        # Shorter wait on first retry (tab was just reloaded, token refreshes quickly)
+        # Longer waits for subsequent retries (Chrome may have been freshly opened)
+        wait = 10 if attempt == 1 else 30
+        logger.info("OAuth retry %d/3 in %ds (waiting for session refresh)...", attempt, wait)
         time.sleep(wait)
 
         # Clear cached OAuth token so we re-read cookies
@@ -297,7 +344,7 @@ def _get_user_id() -> int | None:
         "StreamFLACr: SoundCloud Auth Failed",
         "Could not connect to SoundCloud. Please make sure you're signed into SoundCloud in Chrome.",
     )
-    logger.error("Could not identify SoundCloud user after 3 retries with Chrome launch")
+    logger.error("Could not identify SoundCloud user after 3 retries with session refresh")
     return None
 
 
