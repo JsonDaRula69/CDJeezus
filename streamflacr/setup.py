@@ -12,13 +12,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import DOWNLOAD_DIR, SERATO_DIR
+from .config import CONFIG_DIR, DOWNLOAD_DIR, SERATO_DIR
 
 logger = logging.getLogger(__name__)
 
-PROJECT_DIR = Path(__file__).parent.parent
-ENV_FILE = PROJECT_DIR / ".env"
-LAUNCHDAEMON_PLIST = PROJECT_DIR / "com.djtchill.streamflacr.plist"
+ENV_FILE = CONFIG_DIR / ".env"
 INSTALLED_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.streamflacr.plist"
 
 
@@ -118,7 +116,6 @@ def prompt_soundcloud_login() -> None:
 
 def detect_soulseek_installation() -> bool:
     for path in [
-        PROJECT_DIR / "SoulseekQt.app",
         Path("/Applications/SoulseekQt.app"),
         Path.home() / "Applications" / "SoulseekQt.app",
     ]:
@@ -172,21 +169,58 @@ SEARCH_TIMEOUT=30
 PREFER_FREE_SLOTS=1
 MIN_FILESIZE_MB=5
 """
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     ENV_FILE.write_text(content)
     print(f"\n  Config written to {ENV_FILE}")
 
 
 # ── LaunchDaemon ───────────────────────────────────────────────────────
 
+def _generate_plist() -> str:
+    """Generate LaunchDaemon plist content dynamically."""
+    import shutil
+    streamflacr_path = shutil.which("streamflacr") or "streamflacr"
+    log_dir = Path.home() / "Library" / "Logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.djtchill.streamflacr</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{streamflacr_path}</string>
+        <string>--daemon</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>{Path.home()}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{Path(streamflacr_path).parent}:/usr/local/bin:/usr/bin:/bin</string>
+        <key>STREAMFLACR_CONFIG_DIR</key>
+        <string>{CONFIG_DIR}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{log_dir / "streamflacr.log"}</string>
+    <key>StandardErrorPath</key>
+    <string>{log_dir / "streamflacr.err"}</string>
+</dict>
+</plist>"""
+
+
 def register_launchdaemon() -> bool:
-    if not LAUNCHDAEMON_PLIST.exists():
-        print("  Warning: launchd plist not found, skipping daemon registration.")
-        return False
+    plist_content = _generate_plist()
     subprocess.run(
         ["launchctl", "unload", str(INSTALLED_PLIST)],
         capture_output=True, check=False,
     )
-    shutil.copy2(LAUNCHDAEMON_PLIST, INSTALLED_PLIST)
+    INSTALLED_PLIST.write_text(plist_content)
     result = subprocess.run(
         ["launchctl", "load", str(INSTALLED_PLIST)],
         capture_output=True, text=True, check=False,
