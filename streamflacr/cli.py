@@ -18,6 +18,7 @@ def main() -> None:
     # Default run command (no subcommand)
     parser.add_argument("-d", "--daemon", action="store_true", help="Run as persistent daemon (poll loop)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Debug logging")
+    parser.add_argument("--version", action="store_true", help="Print version and exit")
 
     # setup subcommand
     setup_parser = subparsers.add_parser("setup", help="Run interactive setup wizard")
@@ -26,6 +27,11 @@ def main() -> None:
     subparsers.add_parser("uninstall", help="Remove all StreamFLACr artifacts (safe for Serato)")
 
     args = parser.parse_args()
+
+    if args.version:
+        from . import __version__
+        print(f"StreamFLACr v{__version__}")
+        return
 
     if args.command == "setup":
         run_setup()
@@ -39,7 +45,8 @@ def main() -> None:
     from .config import is_configured
 
     if not is_configured():
-        print("\n  Welcome to StreamFLACr! Let's get you set up.\n")
+        from . import __version__
+        print(f"\n  Welcome to StreamFLACr v{__version__}! Let's get you set up.\n")
         run_setup()
         # Reload config module so module-level vars pick up the new .env
         import importlib
