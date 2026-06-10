@@ -324,24 +324,48 @@ def discover_user_playlists(user_sets_url: str | None = None) -> list[PlaylistIn
 # ── Playlist track fetching ──────────────────────────────────────────────
 
 def fetch_playlist_tracks(playlist_url: str) -> list[TrackInfo]:
-    """Fetch all tracks from a SoundCloud playlist via API v2."""
+    """Fetch all tracks from a SoundCloud playlist via API v2.
+
+    SoundCloud caps the number of tracks returned inline in playlist
+    objects (~5-10), so we resolve the playlist to get its ID, then
+    paginate through the /playlists/{id}/tracks endpoint to get all
+    tracks regardless of playlist size.
+    """
+    # Resolve the playlist URL to get its ID and title
     data = _api_get("resolve", {"url": playlist_url})
-    if data and isinstance(data.get("tracks"), list) and data["tracks"]:
-        tracks = [t for t in (_track_from_api(x) for x in data["tracks"]) if t is not None]
-        logger.info("API returned %d tracks for playlist '%s'", len(tracks), data.get("title", ""))
-        return tracks
+    if not data or not data.get("id"):
+        logger.warning("Could not resolve playlist: %s", playlist_url)
+        return []
 
-    # If resolve didn't include full tracks, try the playlist ID directly
-    if data and data.get("id"):
-        pid = data["id"]
-        full = _api_get(f"playlists/{pid}", {"representation": "full"})
-        if full and isinstance(full.get("tracks"), list) and full["tracks"]:
-            tracks = [t for t in (_track_from_api(x) for x in full["tracks"]) if t is not None]
-            logger.info("Direct playlist API returned %d tracks for '%s'", len(tracks), full.get("title", ""))
-            return tracks
+    pid = data["id"]
+    title = data.get("title", "")
 
-    logger.warning("Could not fetch tracks for playlist: %s", playlist_url)
-    return []
+    # Use the dedicated tracks endpoint with pagination to get all tracks
+    all_tracks: list[TrackInfo] = []
+    offset = 0
+    page_limit = 50
+
+    while True:
+        result = _api_get(f"playlists/{pid}/tracks", {"limit": page_limit, "offset": offset})
+        if not result:
+            break
+
+        if isinstance(result, list):
+            page_tracks = [t for t in (_track_from_api(x) for x in result if isinstance(x, dict)) if t is not None]
+        elif isinstance(result, dict):
+            collection = result.get("collection", [])
+            page_tracks = [t for t in (_track_from_api(x) for x in collection if isinstance(x, dict)) if t is not None]
+        else:
+            break
+
+        all_tracks.extend(page_tracks)
+
+        if len(page_tracks) < page_limit:
+            break
+        offset += page_limit
+
+    logger.info("Fetched %d tracks for playlist '%s' (id=%s)", len(all_tracks), title, pid)
+    return all_tracks
 
 
 def refresh_playlist_tracks(playlist: PlaylistInfo) -> PlaylistInfo:

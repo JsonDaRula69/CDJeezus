@@ -82,6 +82,7 @@ def main() -> None:
     # since we gracefully handle that in soulseek.py's connect() fallback.
     if not args.verbose:
         logging.getLogger("aioslsk.network.connection").setLevel(logging.CRITICAL)
+        logging.getLogger("aioslsk.client").setLevel(logging.CRITICAL)
         for name in ("aioslsk.network.network", "aioslsk.tasks",
                      "aioslsk.shares.manager", "aioslsk.distributed",
                      "aioslsk.network.upnp", "aioslsk.search.manager"):
