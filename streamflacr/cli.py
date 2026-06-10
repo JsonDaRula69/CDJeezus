@@ -22,6 +22,8 @@ def main() -> None:
 
     # setup subcommand
     setup_parser = subparsers.add_parser("setup", help="Run interactive setup wizard")
+    setup_parser.add_argument("--non-interactive", action="store_true",
+                              help="Non-interactive setup: use env vars or defaults for all prompts")
 
     # uninstall subcommand
     subparsers.add_parser("uninstall", help="Remove all StreamFLACr artifacts (safe for Serato)")
@@ -32,6 +34,11 @@ def main() -> None:
 
     if args.version:
         print(f"StreamFLACr v{__version__}")
+        return
+
+    if args.command == "setup":
+        non_interactive = getattr(args, "non_interactive", False)
+        run_setup(non_interactive=non_interactive)
         return
 
     # Print version as the very first output so it appears right after install
@@ -48,7 +55,7 @@ def main() -> None:
 
     if not is_configured():
         print(f"  Welcome to StreamFLACr v{__version__}! Let's get you set up.")
-        run_setup()
+        run_setup(non_interactive=False)
         # Reload config module so module-level vars pick up the new .env
         import importlib
         from . import config as _cfg

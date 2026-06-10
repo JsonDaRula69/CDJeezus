@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 ENV_FILE = CONFIG_DIR / ".env"
 INSTALLED_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.streamflacr.plist"
+# Legacy plist name from v0.12.0 and earlier — must be cleaned up on upgrade
+LEGACY_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.streamflacr.plist"
 
 
 def kill_running_daemon() -> bool:
@@ -27,12 +29,13 @@ def kill_running_daemon() -> bool:
     then kills any remaining Python processes.
     """
     import signal
-    # Unload LaunchAgent so launchd doesn't respawn the daemon
-    if INSTALLED_PLIST.exists():
-        subprocess.run(
-            ["launchctl", "unload", str(INSTALLED_PLIST)],
-            capture_output=True, check=False,
-        )
+    # Unload LaunchAgents so launchd doesn't respawn the daemon
+    for plist in (INSTALLED_PLIST, LEGACY_PLIST):
+        if plist.exists():
+            subprocess.run(
+                ["launchctl", "unload", str(plist)],
+                capture_output=True, check=False,
+            )
 
     my_pid = os.getpid()
     parent_pid = os.getppid()
@@ -197,6 +200,13 @@ def _generate_plist() -> str:
 
 def register_launchdaemon() -> bool:
     kill_running_daemon()
+    # Clean up legacy plist from v0.12.0 and earlier
+    if LEGACY_PLIST.exists():
+        subprocess.run(
+            ["launchctl", "unload", str(LEGACY_PLIST)],
+            capture_output=True, check=False,
+        )
+        LEGACY_PLIST.unlink()
     plist_content = _generate_plist()
     subprocess.run(
         ["launchctl", "unload", str(INSTALLED_PLIST)],
@@ -246,16 +256,17 @@ def full_uninstall() -> None:
     else:
         print("  - No daemon running")
 
-    # 2. Unload and remove LaunchAgent
-    subprocess.run(
-        ["launchctl", "unload", str(INSTALLED_PLIST)],
-        capture_output=True, check=False,
-    )
-    if INSTALLED_PLIST.exists():
-        INSTALLED_PLIST.unlink()
-        print("  ✓ Removed LaunchAgent plist")
-    else:
-        print("  - No LaunchAgent found")
+    # 2. Unload and remove LaunchAgents (current + legacy)
+    for plist_path, label in [(INSTALLED_PLIST, "current"), (LEGACY_PLIST, "legacy")]:
+        subprocess.run(
+            ["launchctl", "unload", str(plist_path)],
+            capture_output=True, check=False,
+        )
+        if plist_path.exists():
+            plist_path.unlink()
+            print(f"  ✓ Removed {label} LaunchAgent plist")
+        else:
+            print(f"  - No {label} LaunchAgent found")
 
     # 3. Remove config directory (~/.config/streamflacr)
     if CONFIG_DIR.exists():
@@ -311,7 +322,7 @@ def full_uninstall() -> None:
 
 # ── Main wizard ────────────────────────────────────────────────────────
 
-def run_setup() -> None:
+def run_setup(*, non_interactive: bool = False) -> None:
     print()
     print("  ───────────────────────────────────────────")
     print("   StreamFLACr Setup Wizard")
@@ -331,6 +342,11 @@ def run_setup() -> None:
             print("  Could not auto-detect profile URL (token may need refreshing)")
     else:
         print("  ✗ SoundCloud login not found in Chrome")
+        if non_interactive:
+            print("  Non-interactive mode: opening SoundCloud login page")
+            print("  Please log in, then re-run `streamflacr setup`.")
+            subprocess.run(["open", "https://soundcloud.com/signin"], check=False)
+            sys.exit(1)
         prompt_soundcloud_login()
         if detect_soundcloud_login():
             user_url = extract_soundcloud_user_url()
@@ -338,6 +354,9 @@ def run_setup() -> None:
                 print(f"  ✓ User profile: {user_url}")
 
     if not user_url:
+        if non_interactive:
+            print("  ERROR: Could not detect SoundCloud profile. Set SOUNDCLOUD_USER_URL in .env.")
+            sys.exit(1)
         print("\n  Could not auto-detect your SoundCloud profile URL.")
         print("  Find it at: https://soundcloud.com/ (click your avatar > Profile)\n")
         user_url = ""
@@ -353,15 +372,24 @@ def run_setup() -> None:
     else:
         print("  ✗ SoulseekQt.app not found in Applications folder")
         print("  SoulseekQt is recommended but not required (the built-in client works too).")
-        answer = input("  Install SoulseekQt? [y/N]: ").strip().lower()
-        if answer == "y":
-            subprocess.run(["open", "https://www.slsknet.org/download"], check=False)
-            input("  Press Enter once SoulseekQt is installed... ")
+        if not non_interactive:
+            answer = input("  Install SoulseekQt? [y/N]: ").strip().lower()
+            if answer == "y":
+                subprocess.run(["open", "https://www.slsknet.org/download"], check=False)
+                input("  Press Enter once SoulseekQt is installed... ")
     if slsk_has_data:
         print("  ✓ SoulseekQt data found (you've logged in before)")
     else:
         print("  Note: No SoulseekQt login data found.")
-    slsk_creds = prompt_soulseek_setup()
+    if non_interactive:
+        slsk_username = os.environ.get("SLSK_USERNAME", "")
+        slsk_password = os.environ.get("SLSK_PASSWORD", "")
+        if not slsk_username or not slsk_password:
+            print("  ERROR: Non-interactive mode requires SLSK_USERNAME and SLSK_PASSWORD env vars.")
+            sys.exit(1)
+        slsk_creds = {"username": slsk_username, "password": slsk_password}
+    else:
+        slsk_creds = prompt_soulseek_setup()
 
     # ── Step 3: Write config + register daemon ──
     print("\n  [3/3] Finishing up...")
@@ -371,11 +399,14 @@ def run_setup() -> None:
     print(f"  ✓ All playlists will be monitored automatically")
 
     print()
-    answer = input("  Start StreamFLACr automatically on login? [Y/n]: ").strip().lower()
-    if answer in ("", "y", "yes"):
+    if non_interactive:
         register_launchdaemon()
     else:
-        print("  Skipping daemon registration. Run `streamflacr --daemon` to start manually.")
+        answer = input("  Start StreamFLACr automatically on login? [Y/n]: ").strip().lower()
+        if answer in ("", "y", "yes"):
+            register_launchdaemon()
+        else:
+            print("  Skipping daemon registration. Run `streamflacr --daemon` to start manually.")
 
     print()
     print("  ───────────────────────────────────────────")
