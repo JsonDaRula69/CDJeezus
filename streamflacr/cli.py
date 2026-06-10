@@ -5,7 +5,7 @@ import asyncio
 import logging
 import sys
 
-from .setup import run_setup, register_launchdaemon, unregister_launchdaemon
+from .setup import run_setup, register_launchdaemon
 
 
 def main() -> None:
@@ -21,16 +21,19 @@ def main() -> None:
 
     # setup subcommand
     setup_parser = subparsers.add_parser("setup", help="Run interactive setup wizard")
-    setup_parser.add_argument("--uninstall", action="store_true", help="Unregister LaunchDaemon and remove config")
+
+    # uninstall subcommand
+    subparsers.add_parser("uninstall", help="Remove all StreamFLACr artifacts (safe for Serato)")
 
     args = parser.parse_args()
 
     if args.command == "setup":
-        if args.uninstall:
-            from .setup import full_uninstall
-            full_uninstall()
-            return
         run_setup()
+        return
+
+    if args.command == "uninstall":
+        from .setup import full_uninstall
+        full_uninstall()
         return
 
     from .config import is_configured

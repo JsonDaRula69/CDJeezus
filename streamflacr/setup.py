@@ -259,21 +259,83 @@ def full_uninstall() -> None:
     uninstall — that data is too sensitive. Smart crates created by
     StreamFLACr remain in place for the user to manage manually.
     """
+    from .serato_crate import BACKUP_DIR
+    print()
     print("  Uninstalling StreamFLACr...")
-    kill_running_daemon()
-    unregister_launchdaemon()
+    print()
+
+    # 1. Stop the daemon
+    if kill_running_daemon():
+        print("  ✓ Stopped running daemon")
+    else:
+        print("  - No daemon running")
+
+    # 2. Unload and remove LaunchAgent
+    subprocess.run(
+        ["launchctl", "unload", str(INSTALLED_PLIST)],
+        capture_output=True, check=False,
+    )
+    if INSTALLED_PLIST.exists():
+        INSTALLED_PLIST.unlink()
+        print("  ✓ Removed LaunchAgent plist")
+    else:
+        print("  - No LaunchAgent found")
+
+    # 3. Remove config directory (~/.config/streamflacr)
     if CONFIG_DIR.exists():
         shutil.rmtree(CONFIG_DIR)
-        print("  Removed config directory.")
-    # Remove log files
+        print(f"  ✓ Removed config: {CONFIG_DIR}")
+    else:
+        print("  - No config directory found")
+
+    # 4. Remove log files
+    removed_logs = 0
     for log in Path.home().glob("Library/Logs/streamflacr*"):
         log.unlink()
-    print("  Cleaned up log files.")
+        removed_logs += 1
+    if removed_logs:
+        print(f"  ✓ Removed {removed_logs} log file(s)")
+    else:
+        print("  - No log files found")
+
+    # 5. Remove Serato backup directory (our own backups, not Serato data)
+    if BACKUP_DIR.exists():
+        shutil.rmtree(BACKUP_DIR)
+        print(f"  ✓ Removed backup directory: {BACKUP_DIR}")
+    else:
+        print("  - No backup directory found")
+
+    # 6. Remove the uv/pipx tool installation
+    uninstalled_tool = False
+    result = subprocess.run(
+        ["uv", "tool", "uninstall", "streamflacr"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        print("  ✓ Uninstalled uv tool")
+        uninstalled_tool = True
+    else:
+        # Try pipx
+        result2 = subprocess.run(
+            ["pipx", "uninstall", "streamflacr"],
+            capture_output=True, text=True,
+        )
+        if result2.returncode == 0:
+            print("  ✓ Uninstalled pipx tool")
+            uninstalled_tool = True
+    if not uninstalled_tool:
+        print("  - Could not auto-uninstall the tool; run manually:")
+        print("    uv tool uninstall streamflacr")
+
     print()
-    print("  Note: Serato smart crates were NOT removed.")
-    print("  To remove them manually, delete .scrate files from:")
-    print(f"    {SERATO_DIR / 'SmartCrates'}")
-    print("  (Backups are at /Users/djtchill/Music/_Serato_Backup_SFr/)")
+    print("  ───────────────────────────────────────────")
+    print("  StreamFLACr has been fully uninstalled.")
+    print()
+    print("  The following were NOT removed (Serato data is sensitive):")
+    print(f"    Smart crates: {SERATO_DIR / 'SmartCrates'}")
+    print(f"    Downloaded files: {DOWNLOAD_DIR}")
+    print("  ───────────────────────────────────────────")
+    print()
 
 
 # ── Main wizard ────────────────────────────────────────────────────────
