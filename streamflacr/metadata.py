@@ -21,16 +21,18 @@ def tag_file(
     album: str | None = None,
     genre: str | None = None,
     year: str | None = None,
+    label_name: str | None = None,
 ) -> None:
     """Write core metadata to a FLAC or MP3 file.
 
     The 'comment' field is set to the SoundCloud playlist name so Serato
     smart crates can match on it (Comment IS <playlist_name>).
+    The 'label' field is set to the SoundCloud label_name (record company).
     """
     if filepath.suffix.lower() == ".flac":
-        _tag_flac(filepath, artist, title, playlist_name, album, genre, year)
+        _tag_flac(filepath, artist, title, playlist_name, album, genre, year, label_name)
     elif filepath.suffix.lower() == ".mp3":
-        _tag_mp3(filepath, artist, title, playlist_name, album, genre, year)
+        _tag_mp3(filepath, artist, title, playlist_name, album, genre, year, label_name)
     else:
         logger.warning("Unsupported format for tagging: %s", filepath.suffix)
         return
@@ -115,6 +117,16 @@ def enrich_metadata(
         updates["composer"] = sc_track.writer_composer
         logger.info("Filling missing composer: '%s'", sc_track.writer_composer)
 
+    # Label: set from SoundCloud label_name (record company)
+    if sc_track.label_name:
+        if not existing.get("label"):
+            updates["label"] = sc_track.label_name
+            logger.info("Filling missing label: '%s'", sc_track.label_name)
+        elif existing.get("label", "").lower() != sc_track.label_name.lower():
+            # Overwrite with SoundCloud's canonical label name
+            updates["label"] = sc_track.label_name
+            logger.info("Overwriting label: '%s' -> '%s'", existing.get("label"), sc_track.label_name)
+
     if not updates:
         logger.debug("Metadata already complete for %s", filepath.name)
         return
@@ -127,12 +139,14 @@ def enrich_metadata(
     logger.info("Enriched metadata for %s: %s", filepath.name, list(updates.keys()))
 
 
-def _tag_flac(filepath, artist, title, playlist_name, album, genre, year):
+def _tag_flac(filepath, artist, title, playlist_name, album, genre, year, label_name=None):
     from mutagen.flac import FLAC
     audio = FLAC(str(filepath))
     audio["artist"] = artist
     audio["title"] = title
     audio["comment"] = playlist_name
+    if label_name:
+        audio["label"] = label_name
     if album:
         audio["album"] = album
     if genre:
@@ -142,13 +156,15 @@ def _tag_flac(filepath, artist, title, playlist_name, album, genre, year):
     audio.save()
 
 
-def _tag_mp3(filepath, artist, title, playlist_name, album, genre, year):
-    from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, COMM
+def _tag_mp3(filepath, artist, title, playlist_name, album, genre, year, label_name=None):
+    from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, COMM, TPUB
     audio = ID3(str(filepath))
     audio.add(TPE1(encoding=3, text=artist))
     audio.add(TIT2(encoding=3, text=title))
     # COMM with description "StreamFLACr" for smart crate matching
     audio.add(COMM(encoding=3, lang="eng", desc="StreamFLACr", text=playlist_name))
+    if label_name:
+        audio.add(TPUB(encoding=3, text=label_name))
     if album:
         audio.add(TALB(encoding=3, text=album))
     if genre:
@@ -175,6 +191,7 @@ def _enrich_mp3(filepath: Path, updates: dict):
         "composer": lambda v: TCOM(encoding=3, text=v),
         "date": lambda v: TDRC(encoding=3, text=v),
         "isrc": lambda v: TIPL(encoding=3, text=[f"ISRC: {v}"]),
+        "label": lambda v: TPUB(encoding=3, text=v),
     }
     for key, val in updates.items():
         if key in frame_map:

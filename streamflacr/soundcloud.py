@@ -50,6 +50,7 @@ class TrackInfo:
     canonical_artist: str | None = None  # from publisher_metadata.artist
     writer_composer: str | None = None
     isrc: str | None = None
+    label_name: str | None = None  # record label from SoundCloud
 
 
 @dataclass
@@ -236,6 +237,7 @@ def _track_from_api(track_data: dict) -> TrackInfo | None:
     canonical_artist = pm.get("artist") if pm else None
     writer_composer = pm.get("writer_composer") if pm else None
     isrc = pm.get("isrc") if pm else None
+    label_name = track_data.get("label_name") or None
 
     return TrackInfo(
         track_id=track_id,
@@ -248,6 +250,7 @@ def _track_from_api(track_data: dict) -> TrackInfo | None:
         canonical_artist=canonical_artist,
         writer_composer=writer_composer,
         isrc=isrc,
+        label_name=label_name,
     )
 
 

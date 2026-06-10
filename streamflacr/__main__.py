@@ -124,6 +124,7 @@ async def process_new_track(
                 playlist_name=playlist_name,
                 album=track.album,
                 genre=track.genre,
+                label_name=track.label_name,
             )
             enrich_metadata(
                 filepath=local_path,
