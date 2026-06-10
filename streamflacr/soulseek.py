@@ -43,7 +43,15 @@ class SoulseekDownloader:
             ),
         )
         self.client = SoulSeekClient(settings=settings)
-        await self.client.start(connect=True)
+        try:
+            await self.client.start(connect=True)
+        except Exception as e:
+            # ListeningConnectionFailedError: ports are occupied (stale daemon)
+            # Search/download works without listening ports since we don't share
+            logger.warning("Listening ports unavailable (continuing without): %s", e)
+            # Start services but skip listening port binding
+            await self.client.start(connect=False)
+            await self.client.network.connect_server()
         await self.client.login()
         logger.info("Logged into Soulseek as %s", SLSK_USERNAME)
 

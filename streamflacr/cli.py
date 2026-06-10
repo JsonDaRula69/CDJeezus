@@ -45,6 +45,10 @@ def main() -> None:
             print("\n  Setup incomplete. Run `streamflacr setup` to try again.\n")
             sys.exit(1)
 
+    # Kill any stale daemon before starting (avoids port conflicts)
+    from .setup import kill_running_daemon
+    kill_running_daemon()
+
     # Run the main daemon
     level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(

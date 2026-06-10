@@ -20,6 +20,31 @@ ENV_FILE = CONFIG_DIR / ".env"
 INSTALLED_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.streamflacr.plist"
 
 
+def kill_running_daemon() -> bool:
+    """Kill any running streamflacr daemon processes."""
+    import signal
+    killed = False
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "streamflacr.*--daemon"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            for pid_str in result.stdout.strip().split("\n"):
+                try:
+                    pid = int(pid_str.strip())
+                    os.kill(pid, signal.SIGTERM)
+                    killed = True
+                except (ValueError, ProcessLookupError):
+                    pass
+    except Exception:
+        pass
+    if killed:
+        import time
+        time.sleep(1)
+    return killed
+
+
 def _get_package_python() -> str:
     return sys.executable
 
@@ -194,6 +219,7 @@ def _generate_plist() -> str:
 
 
 def register_launchdaemon() -> bool:
+    kill_running_daemon()
     plist_content = _generate_plist()
     subprocess.run(
         ["launchctl", "unload", str(INSTALLED_PLIST)],
@@ -213,6 +239,7 @@ def register_launchdaemon() -> bool:
 
 
 def unregister_launchdaemon() -> bool:
+    kill_running_daemon()
     subprocess.run(
         ["launchctl", "unload", str(INSTALLED_PLIST)],
         capture_output=True, check=False,
