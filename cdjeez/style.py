@@ -9,6 +9,7 @@ falls back gracefully on non-interactive terminals.
 """
 
 import os
+import shutil
 import sys
 import time
 
@@ -42,15 +43,20 @@ QUESTIONARY_STYLE = questionary.Style([
 
 # ── Output helpers ──────────────────────────────────────────────────────
 
+GO_BACK = "← Go back"
+
+
 def banner(version: str) -> None:
     """Print the CDJeez ASCII banner with tagline and version."""
     art = Text()
-    art.append('  ██████╗ ██████╗  ██╗   ██╗ ██████╗  ██████╗  ███████╗\n', style='bold cyan')
-    art.append(' ██╔════╝ ██╔══██╗ ██║   ██║ ██╔══██╗ ██╔══██╗ ╚════██║\n', style='bold cyan')
-    art.append(' ██║      ██║  ██║ ██║   ██║ ██████╔╝ ██████╔╝    ██╔═╝\n', style='bold cyan')
-    art.append(' ██║      ██║  ██║ ██║   ██║ ██╔══██╗ ██╔══██╗   ██╔═╝\n', style='bold cyan')
-    art.append(' ╚██████╗ ██████╔╝ ╚██████╔╝ ██████╔╝ ██████╔╝  ██████╗\n', style='bold cyan')
-    art.append('  ╚═════╝ ╚═════╝   ╚═════╝  ╚═════╝  ╚═════╝   ╚═════╝\n', style='bold cyan')
+    art.append('  /$$$$$$  /$$$$$$$     /$$$$$                              \n', style='bold green')
+    art.append(" /$$__  $$| $$__  $$   |__  $$                              \n", style='bold green')
+    art.append('| $$  \\__/| $$  \\ $$      | $$  /$$$$$$   /$$$$$$  /$$$$$$$$\n', style='bold green')
+    art.append('| $$      | $$  | $$      | $$ /$$__  $$ /$$__  $$|____ /$$/\n', style='bold green')
+    art.append('| $$      | $$  | $$ /$$  | $$| $$$$$$$$| $$$$$$$$   /$$$$/ \n', style='bold green')
+    art.append('| $$    $$| $$  | $$| $$  | $$| $$_____/| $$_____/  /$$__/  \n', style='bold green')
+    art.append('|  $$$$$$/| $$$$$$$/|  $$$$$$/|  $$$$$$$|  $$$$$$$ /$$$$$$$$\n', style='bold green')
+    art.append(' \\______/ |_______/  \\______/  \\_______/ \\_______/|________/\n', style='bold green')
     art.append('\n        ', style='')
     art.append("They said I can't bring my Numark, so I guess we're going old school again",
               style='italic yellow')
@@ -81,6 +87,11 @@ def fail(text: str) -> None:
 def dim(text: str) -> None:
     """Dim/secondary text."""
     console.print(f'  [dim]{text}[/dim]')
+
+
+def quip(text: str) -> None:
+    """Comedy aside — italic and dimmed so it reads like a footnote."""
+    console.print(f'  [dim italic]{text}[/dim italic]')
 
 
 def info(text: str) -> None:
@@ -172,32 +183,41 @@ def select(prompt: str, choices: list[str]) -> int:
     return choices.index(result)
 
 
-def multiselect(prompt: str, choices: list[str]) -> list[int]:
+def multiselect(prompt: str, choices: list[str], *, allow_back: bool = False) -> list[int]:
     """Multi-select menu (arrow keys + space + enter). Returns list of indices.
 
+    If allow_back is True, a "← Go back" option is appended. Selecting it (alone) returns [-1].
     Falls back to comma-separated input on non-interactive terminals.
     """
+    effective = list(choices)
+    if allow_back:
+        effective.append(GO_BACK)
+
     if not sys.stdout.isatty():
         print(f"\n  {prompt}")
-        for i, choice in enumerate(choices):
+        for i, choice in enumerate(effective):
             print(f"    {i+1}. {choice}")
         while True:
             try:
-                raw = input(f"  Enter numbers [1-{len(choices)}] (comma-separated): ")
+                raw = input(f"  Enter numbers [1-{len(effective)}] (comma-separated): ")
                 indices = [int(x.strip()) - 1 for x in raw.split(',') if x.strip()]
-                if all(0 <= i < len(choices) for i in indices):
-                    return indices
+                if all(0 <= i < len(effective) for i in indices):
+                    if allow_back and len(effective) - 1 in indices:
+                        return [-1]
+                    return [i for i in indices if i < len(choices)]
             except (ValueError, EOFError):
                 pass
 
     result = questionary.checkbox(
         f'  {prompt}',
-        choices=choices,
+        choices=effective,
         style=QUESTIONARY_STYLE,
     ).ask()
 
     if result is None:
         return []
+    if GO_BACK in result:
+        return [-1]
     return [choices.index(r) for r in result]
 
 
@@ -244,14 +264,7 @@ def text_input(prompt: str, default: str = '') -> str:
 
 def press_enter(prompt: str = 'Press Enter to continue...') -> None:
     """Wait for user to press Enter."""
-    if not sys.stdout.isatty():
-        input(f'  {prompt} ')
-        return
-
-    questionary.press_enter(
-        f'  {prompt}',
-        style=QUESTIONARY_STYLE,
-    ).ask()
+    input(f'  {prompt} ')
 
 
 # ── Intro rant (first-time launch only) ──────────────────────────────────
@@ -273,7 +286,7 @@ INTRO_RANT = (
 )
 
 
-def play_intro_rant(duration: float = 5.0) -> None:
+def play_intro_rant(duration: float = 10.0) -> None:
     """Type out the intro rant character by character, then clear it.
 
     Falls back to a simple print on non-interactive terminals.
@@ -307,11 +320,15 @@ def play_intro_rant(duration: float = 5.0) -> None:
 
     sys.stdout.write('\033[0m\n')
     sys.stdout.flush()
-    time.sleep(3)
+    time.sleep(5)
 
-    # Clear the rant
-    lines = INTRO_RANT.count('\n') + 2
-    sys.stdout.write(f'\033[{lines}F\033[J')
+    # Clear the rant (count actual visual lines including wrapping)
+    term_width = shutil.get_terminal_size().columns or 80
+    visual_lines = 0
+    for line in INTRO_RANT.split('\n'):
+        visual_lines += max(1, -(-len(line) // term_width))  # ceil div
+    visual_lines += 1  # extra line from final newline
+    sys.stdout.write(f'\033[{visual_lines}F\033[J')
     sys.stdout.flush()
 
 

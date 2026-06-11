@@ -20,6 +20,7 @@ flag the match as uncertain, notifying the user for manual review.
 import json
 import logging
 import os
+import time
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,20 @@ logger = logging.getLogger(__name__)
 DURATION_TOLERANCE_S = 3.0
 # Minimum confidence to consider a verification "passing"
 VERIFICATION_THRESHOLD = 0.70
+
+# AcoustID rate limit: max 3 requests per second
+_acoustid_last_request: float = 0.0
+_acoustid_min_interval: float = 0.34  # ~3 req/s
+
+
+def _acoustid_rate_limit() -> None:
+    """Ensure we don't exceed AcoustID's 3 requests/second limit."""
+    global _acoustid_last_request
+    now = time.monotonic()
+    elapsed = now - _acoustid_last_request
+    if elapsed < _acoustid_min_interval:
+        time.sleep(_acoustid_min_interval - elapsed)
+    _acoustid_last_request = time.monotonic()
 
 
 @dataclass
@@ -101,6 +116,8 @@ def lookup_acoustid(fingerprint: str, duration: float) -> list[dict]:
     if not ACOUSTID_API_KEY:
         logger.debug("No AcoustID API key configured, skipping lookup")
         return []
+
+    _acoustid_rate_limit()
 
     try:
         response = requests.get(

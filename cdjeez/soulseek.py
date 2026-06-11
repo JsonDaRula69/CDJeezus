@@ -7,7 +7,7 @@ from pathlib import Path
 from aioslsk.client import SoulSeekClient
 from aioslsk.protocol.primitives import AttributeKey
 from aioslsk.search.model import SearchRequest
-from aioslsk.settings import Settings, CredentialsSettings, SharesSettings
+from aioslsk.settings import Settings, CredentialsSettings, SharedDirectorySettingEntry, SharesSettings
 from aioslsk.transfer.state import CompleteState, FailedState, AbortedState
 
 from .config import (
@@ -15,9 +15,9 @@ from .config import (
     MIN_FILESIZE_MB,
     PREFER_FREE_SLOTS,
     SLSK_PASSWORD,
+    SLSK_SHARE_ENABLED,
     SLSK_USERNAME,
 )
-
 logger = logging.getLogger(__name__)
 
 MIN_MP3_BITRATE = 320
@@ -39,8 +39,8 @@ class SoulseekDownloader:
             ),
             shares=SharesSettings(
                 download=self._download_dir,
-                directories=[],
-                scan_on_start=False,
+                directories=[SharedDirectorySettingEntry(path=str(DOWNLOAD_DIR))] if SLSK_SHARE_ENABLED else [],
+                scan_on_start=SLSK_SHARE_ENABLED,
             ),
         )
         self.client = SoulSeekClient(settings=settings)

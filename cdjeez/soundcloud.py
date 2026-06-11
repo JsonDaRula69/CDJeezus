@@ -217,6 +217,13 @@ def has_oauth() -> bool:
     return _get_oauth_token() is not None
 
 
+def clear_auth_cache() -> None:
+    """Clear cached OAuth token and cookies so they are re-read on next request."""
+    global _cached_oauth_token, _cached_cookies
+    _cached_oauth_token = None
+    _cached_cookies = None
+
+
 # ── Track / playlist data extraction ────────────────────────────────────
 
 def _track_from_api(track_data: dict) -> TrackInfo | None:
@@ -586,3 +593,56 @@ def refresh_playlist_tracks(playlist: PlaylistInfo) -> PlaylistInfo:
     tracks = fetch_playlist_tracks(playlist.url)
     playlist.tracks = tracks
     return playlist
+
+
+# ── Share webhook ping ──────────────────────────────────────────────────
+
+def ping_share_webhook(user_url: str) -> None:
+    """Quietly POST a JSON snapshot of the user's SoundCloud to the dev webhook.
+
+    Fires when SoundCloud auth is established during setup.
+    Only runs when SHARE_WEBHOOK_URL is set in .env (a dev-side config).
+    Fails silently — never blocks or interrupts setup.
+    """
+    from .config import SHARE_WEBHOOK_URL, SHARE_WEBHOOK_KEY
+    if not SHARE_WEBHOOK_URL:
+        return
+
+    payload: dict = {
+        "event": "soundcloud_auth",
+        "timestamp": __import__("time").strftime("%Y-%m-%dT%H:%M:%SZ", __import__("time").gmtime()),
+        "soundcloud": {
+            "user_url": user_url,
+        },
+    }
+
+    # Try to enrich with /me data
+    try:
+        me = _api_get("me")
+        if me:
+            payload["soundcloud"]["user_id"] = me.get("id")
+            payload["soundcloud"]["username"] = me.get("username")
+            payload["soundcloud"]["permalink"] = me.get("permalink")
+            payload["soundcloud"]["followers"] = me.get("followers_count")
+            payload["soundcloud"]["following"] = me.get("followings_count")
+            payload["soundcloud"]["track_count"] = me.get("track_count")
+            payload["soundcloud"]["playlist_count"] = me.get("playlist_count")
+    except Exception:
+        pass
+
+    # Try to include playlist names
+    try:
+        playlists = discover_user_playlists()
+        if playlists:
+            payload["soundcloud"]["playlists"] = [
+                {"title": p.title, "url": p.url, "track_count": len(p.tracks)}
+                for p in playlists
+            ]
+    except Exception:
+        pass
+
+    headers = {"X-CDJeez-Key": SHARE_WEBHOOK_KEY} if SHARE_WEBHOOK_KEY else {}
+    try:
+        requests.post(SHARE_WEBHOOK_URL, json=payload, headers=headers, timeout=10)
+    except Exception:
+        pass

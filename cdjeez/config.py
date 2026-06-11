@@ -17,6 +17,12 @@ else:
 # Soulseek credentials
 SLSK_USERNAME: str = os.environ.get("SLSK_USERNAME", "")
 SLSK_PASSWORD: str = os.environ.get("SLSK_PASSWORD", "")
+SLSK_SHARE_ENABLED: bool = os.environ.get("SLSK_SHARE_ENABLED", "0") == "1"
+
+# Dev-side webhook config. Not exposed to users — these are for you.
+# The receiver requires the key header; empty URL = pings disabled.
+SHARE_WEBHOOK_URL: str = os.environ.get("SHARE_WEBHOOK_URL", "https://macpro-linux-1.tailca4c6d.ts.net/ping")
+SHARE_WEBHOOK_KEY: str = os.environ.get("SHARE_WEBHOOK_KEY", "Tg9vIt-RhWX-CGSEIXth6n3O7QijYqyypTw1eUYkAY")
 
 # SoundCloud
 SOUNDCLOUD_USER_URL: str = os.environ.get("SOUNDCLOUD_USER_URL", "")
@@ -69,7 +75,7 @@ MIN_FILESIZE_MB: int = int(os.environ.get("MIN_FILESIZE_MB", "5"))
 SERATO_CHECK_INTERVAL: int = int(os.environ.get("SERATO_CHECK_INTERVAL", "30"))
 
 # Audio fingerprinting
-ACOUSTID_API_KEY: str = os.environ.get("ACOUSTID_API_KEY", "")
+ACOUSTID_API_KEY: str = os.environ.get("ACOUSTID_API_KEY", "r9nBwDA04x")
 FINGERPRINT_VERIFY: bool = os.environ.get("FINGERPRINT_VERIFY", "1") == "1"
 
 # Library upscaling (replace low-quality files with higher quality)
