@@ -1,7 +1,7 @@
 """CDJeezus main daemon.
 
 Monitors ALL SoundCloud playlists for the authenticated user, searches
-Soulseek for FLAC versions of new tracks (falling back to 320kbps MP3),
+Soulseek for lossless versions of new tracks (AIFF > WAV > FLAC > MP3 320kbps),
 downloads them, tags metadata, and creates matching Serato smart crates.
 
 After downloading, each file is verified via audio fingerprinting
@@ -39,6 +39,7 @@ from .backup import run_backups
 from .fingerprint import check_fpcalc, verify_download
 from .match import filter_and_rank_candidates, extract_versions
 from .metadata import tag_file, enrich_metadata
+from .converter import convert_to_aiff, needs_conversion, check_ffmpeg
 from .notify import send_notification
 from .serato_crate import ensure_smart_crate
 from .serato_watch import is_serato_running, flush_staging_to_import
@@ -71,6 +72,16 @@ def _check_fpcalc_available() -> bool:
         else:
             logger.info("fpcalc not found — install chromaprint for fingerprint verification")
     return _FPCALC_AVAILABLE
+
+
+def _check_ffmpeg_available() -> bool:
+    """Check ffmpeg availability once and log."""
+    if check_ffmpeg():
+        logger.info("ffmpeg available — FLAC/WAV will be converted to AIFF")
+        return True
+    logger.warning("ffmpeg not found — FLAC/WAV files won't be converted to AIFF")
+    logger.warning("Install: brew install ffmpeg")
+    return False
 
 
 def _version_label(filename: str) -> str:
@@ -109,7 +120,7 @@ async def process_new_track(
     raw_candidates = await slsk.search_track(search_artist, track.title, timeout=SEARCH_TIMEOUT)
 
     if not raw_candidates:
-        msg = f"No FLAC or 320kbps MP3 found: {display_artist} - {track.title}"
+        msg = f"No lossless or 320kbps MP3 found: {display_artist} - {track.title}"
         logger.warning(msg)
         send_notification("CDJeezus: Not Found", msg)
         return []
@@ -396,7 +407,9 @@ async def graceful_shutdown(slsk: SoulseekDownloader, state: StateManager) -> No
     logger.info("Graceful shutdown initiated — completing in-progress work")
 
     # Check for any untagged files in staging and tag them
-    untagged = list(STAGING_DIR.glob("*.flac")) + list(STAGING_DIR.glob("*.mp3"))
+    untagged = (list(STAGING_DIR.glob("*.flac")) + list(STAGING_DIR.glob("*.mp3"))
+                + list(STAGING_DIR.glob("*.aiff")) + list(STAGING_DIR.glob("*.aif"))
+                + list(STAGING_DIR.glob("*.wav")))
     if untagged:
         logger.info("Checking %d staged file(s) for missing metadata", len(untagged))
         from .metadata import verify_metadata
@@ -411,7 +424,9 @@ async def graceful_shutdown(slsk: SoulseekDownloader, state: StateManager) -> No
         if moved:
             logger.info("Flushed %d staged file(s) to Auto Import on shutdown", len(moved))
     else:
-        pending = list(STAGING_DIR.glob("*.flac")) + list(STAGING_DIR.glob("*.mp3"))
+        pending = (list(STAGING_DIR.glob("*.flac")) + list(STAGING_DIR.glob("*.mp3"))
+                   + list(STAGING_DIR.glob("*.aiff")) + list(STAGING_DIR.glob("*.aif"))
+                   + list(STAGING_DIR.glob("*.wav")))
         if pending:
             logger.info(
                 "Serato is running; %d file(s) will remain in staging for next launch",
@@ -478,6 +493,9 @@ async def amain(daemon: bool = False) -> None:
         remove_pid()
         clear_stop_flag()
         return
+
+    # Check conversion tools
+    _check_ffmpeg_available()
 
     # Run pre-session backup if enabled
     if BACKUP_ENABLED:

@@ -4,9 +4,6 @@ on:
   release:
     types: [published]
 
-permissions:
-  id-token: write  # trusted publishing
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -42,5 +39,16 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish to PyPI
+      # Use API token if available (required for first publish of a new project).
+      # Trusted publishing (OIDC) can't create new PyPI projects.
+      # After the first successful publish, you can remove the PYPI_API_TOKEN
+      # secret and rely on trusted publishing alone.
+      - name: Publish to PyPI (API token)
+        if: ${{ secrets.PYPI_API_TOKEN }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Publish to PyPI (trusted publisher)
+        if: ${{ !secrets.PYPI_API_TOKEN }}
         uses: pypa/gh-action-pypi-publish@release/v1

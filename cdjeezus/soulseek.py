@@ -64,7 +64,12 @@ class SoulseekDownloader:
     async def search_track(
         self, artist: str, title: str, timeout: int = 30
     ) -> list[dict]:
-        """Search for a track on Soulseek, prioritizing FLAC then 320kbps MP3."""
+        """Search for a track on Soulseek with format priority.
+
+        Priority order: AIFF > WAV > FLAC > MP3 320kbps.
+        FLAC/WAV files will be converted to AIFF after download for
+        maximum Serato/CDJ compatibility.
+        """
         if not self.client:
             raise RuntimeError("Not connected to Soulseek")
 
@@ -75,15 +80,30 @@ class SoulseekDownloader:
 
         await asyncio.sleep(timeout)
 
+        # Format tiers: lower = preferred
+        # AIFF (0) > WAV (1) > FLAC (2) > MP3 320kbps (3)
+        FORMAT_TIERS = {".aiff": 0, ".aif": 0, ".wav": 1, ".flac": 2, ".mp3": 3}
+
         candidates = []
         for result in request.results:
             for item in result.shared_items:
                 filename = item.filename
                 lower = filename.lower()
 
-                if lower.endswith(".flac"):
-                    tier = 0
-                elif lower.endswith(".mp3"):
+                # Determine format tier
+                ext = None
+                tier = None
+                for ext_key, tier_val in FORMAT_TIERS.items():
+                    if lower.endswith(ext_key):
+                        ext = ext_key
+                        tier = tier_val
+                        break
+
+                if tier is None:
+                    continue
+
+                # MP3: enforce minimum bitrate
+                if tier == 3:  # MP3
                     attrs = item.get_attribute_map()
                     bitrate = attrs.get(AttributeKey.BITRATE, 0)
                     if bitrate < MIN_MP3_BITRATE:
@@ -92,9 +112,6 @@ class SoulseekDownloader:
                             bitrate, MIN_MP3_BITRATE, filename,
                         )
                         continue
-                    tier = 1
-                else:
-                    continue
 
                 filesize_mb = item.filesize / (1024 * 1024)
                 if filesize_mb < MIN_FILESIZE_MB:
@@ -114,6 +131,7 @@ class SoulseekDownloader:
                     "avg_speed": result.avg_speed,
                     "remote_path": filename,
                     "tier": tier,
+                    "format": ext.lstrip("."),
                 })
 
         def sort_key(c):
@@ -122,11 +140,16 @@ class SoulseekDownloader:
 
         candidates.sort(key=sort_key)
 
-        flac_count = sum(1 for c in candidates if c["tier"] == 0)
-        mp3_count = sum(1 for c in candidates if c["tier"] == 1)
+        # Log counts per format
+        tier_names = {0: "AIFF", 1: "WAV", 2: "FLAC", 3: "320kbps MP3"}
+        counts = {}
+        for c in candidates:
+            name = tier_names.get(c["tier"], "other")
+            counts[name] = counts.get(name, 0) + 1
+        parts = [f"{v} {k}" for k, v in sorted(counts.items(), key=lambda x: x[1], reverse=True)]
         logger.info(
-            "Found %d candidates for %s - %s (%d FLAC, %d 320kbps MP3)",
-            len(candidates), artist, title, flac_count, mp3_count,
+            "Found %d candidates for %s - %s (%s)",
+            len(candidates), artist, title, ", ".join(parts) if parts else "none",
         )
         return candidates
 

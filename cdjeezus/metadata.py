@@ -5,7 +5,7 @@ and other standard fields. The 'description' Vorbis tag / ID3 COMM with empty
 description is what Serato DJ reads for its Comment column, which is matched
 by smart crate rules (Comment IS <playlist_name>).
 
-Supports both FLAC (Vorbis comments) and MP3 (ID3v2 tags).
+Supports FLAC (Vorbis comments), MP3 (ID3v2 tags), and AIFF (ID3v2 tags).
 """
 
 import logging
@@ -34,6 +34,8 @@ def tag_file(
         _tag_flac(filepath, artist, title, playlist_name, album, genre, year, label_name)
     elif filepath.suffix.lower() == ".mp3":
         _tag_mp3(filepath, artist, title, playlist_name, album, genre, year, label_name)
+    elif filepath.suffix.lower() in (".aiff", ".aif"):
+        _tag_aiff(filepath, artist, title, playlist_name, album, genre, year, label_name)
     else:
         logger.warning("Unsupported format for tagging: %s", filepath.suffix)
         return
@@ -69,6 +71,21 @@ def verify_metadata(filepath: Path) -> dict:
                 if frame.desc == "CDJeezus" or frame.desc == "":
                     result["comment"] = str(frame.text[0]) if frame.text else ""
                     break
+        elif filepath.suffix.lower() in (".aiff", ".aif"):
+            from mutagen.aiff import AIFF
+            audio = AIFF(str(filepath))
+            if audio.tags:
+                mapping = {
+                    "artist": "TPE1", "title": "TIT2", "album": "TALB",
+                    "genre": "TCON", "date": "TDRC", "publisher": "TPUB",
+                }
+                for key, frame_id in mapping.items():
+                    if frame_id in audio.tags:
+                        result[key] = str(audio.tags[frame_id])
+                for frame in audio.tags.getall("COMM"):
+                    if frame.desc == "" or frame.desc == "CDJeezus":
+                        result["comment"] = str(frame.text[0]) if frame.text else ""
+                        break
     except Exception as e:
         logger.debug("Could not read metadata from %s: %s", filepath.name, e)
     return result
@@ -136,6 +153,8 @@ def enrich_metadata(
         _enrich_flac(filepath, updates)
     elif filepath.suffix.lower() == ".mp3":
         _enrich_mp3(filepath, updates)
+    elif filepath.suffix.lower() in (".aiff", ".aif"):
+        _enrich_aiff(filepath, updates)
 
     logger.info("Enriched metadata for %s: %s", filepath.name, list(updates.keys()))
 
@@ -201,4 +220,53 @@ def _enrich_mp3(filepath: Path, updates: dict):
     for key, val in updates.items():
         if key in frame_map:
             audio.add(frame_map[key](val))
+    audio.save()
+
+
+def _tag_aiff(filepath, artist, title, playlist_name, album, genre, year, label_name=None):
+    """Tag an AIFF file using ID3v2 tags (same as MP3 but via mutagen.aiff)."""
+    from mutagen.aiff import AIFF
+    from mutagen.id3 import TIT2, TPE1, TALB, TCON, TDRC, COMM, TPUB
+    try:
+        audio = AIFF(str(filepath))
+    except Exception:
+        audio = AIFF()
+    if audio.tags is None:
+        audio.add_tags()
+    audio.tags.add(TPE1(encoding=3, text=artist))
+    audio.tags.add(TIT2(encoding=3, text=title))
+    # Serato reads COMM with empty description for Comment column
+    audio.tags.add(COMM(encoding=3, lang="eng", desc="", text=playlist_name))
+    if label_name:
+        audio.tags.add(TPUB(encoding=3, text=label_name))
+    if album:
+        audio.tags.add(TALB(encoding=3, text=album))
+    if genre:
+        audio.tags.add(TCON(encoding=3, text=genre))
+    if year:
+        audio.tags.add(TDRC(encoding=3, text=year))
+    audio.save()
+
+
+def _enrich_aiff(filepath: Path, updates: dict):
+    """Enrich AIFF metadata (same ID3v2 frames as MP3)."""
+    from mutagen.aiff import AIFF
+    from mutagen.id3 import TALB, TCON, TCOM, TDRC, TIPL, TPUB
+    try:
+        audio = AIFF(str(filepath))
+    except Exception:
+        return
+    if audio.tags is None:
+        audio.add_tags()
+    frame_map = {
+        "album": lambda v: TALB(encoding=3, text=v),
+        "genre": lambda v: TCON(encoding=3, text=v),
+        "composer": lambda v: TCOM(encoding=3, text=v),
+        "date": lambda v: TDRC(encoding=3, text=v),
+        "isrc": lambda v: TIPL(encoding=3, text=[f"ISRC: {v}"]),
+        "label": lambda v: TPUB(encoding=3, text=v),
+    }
+    for key, val in updates.items():
+        if key in frame_map:
+            audio.tags.add(frame_map[key](val))
     audio.save()
