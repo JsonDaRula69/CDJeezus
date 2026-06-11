@@ -287,11 +287,10 @@ def unregister_launchdaemon() -> bool:
 # ── Uninstall ──────────────────────────────────────────────────────────
 
 def full_uninstall() -> None:
-    """Interactive uninstall. Asks about keeping streaming source migration data.
+    """Non-interactive uninstall. Removes all CDJeezus artifacts.
 
-    Removes all CDJeezus artifacts: config, staging, logs, LaunchAgent.
-    Never touches Serato or Rekordbox library data.
-    The only prompt asks whether to keep migration data (state.json, .env).
+    Never deletes music files, DJ library data, or backups.
+    Only removes: config, staging, logs, pid, LaunchAgent.
     """
     from . import __version__
     print(f"\n  CDJeezus v{__version__} Uninstall\n")
@@ -303,25 +302,10 @@ def full_uninstall() -> None:
     # Unregister daemon
     unregister_launchdaemon()
 
-    # Ask about migration data
-    keep_data = input("  Keep streaming source migration data? [Y/n]: ").strip().lower()
-    keep_data = keep_data in ("", "y", "yes")
-
-    # Remove config directory
+    # Remove config directory entirely (state.json, .env, staging, logs, pid)
     if CONFIG_DIR.exists():
-        if keep_data:
-            # Keep state.json and .env (migration data), remove everything else
-            for item in list(CONFIG_DIR.iterdir()):
-                if item.name in ("state.json", ".env"):
-                    continue
-                if item.is_dir():
-                    shutil.rmtree(item, ignore_errors=True)
-                else:
-                    item.unlink(missing_ok=True)
-            print("  ✓ Config removed (kept state.json and .env)")
-        else:
-            shutil.rmtree(CONFIG_DIR, ignore_errors=True)
-            print("  ✓ All config and migration data removed")
+        shutil.rmtree(CONFIG_DIR, ignore_errors=True)
+        print("  ✓ Config removed")
 
     # Remove plist (current, legacy, and old StreamFLACr names)
     for plist in (INSTALLED_PLIST, LEGACY_PLIST, STREAMFLACR_PLIST, STREAMFLACR_LEGACY_PLIST):
@@ -330,14 +314,13 @@ def full_uninstall() -> None:
             plist.unlink()
     print("  ✓ LaunchAgent removed")
 
-    # NOTE: We do NOT remove backup directories. These are safety nets
-    # for the user's DJ library data and must survive uninstall.
-    # The user can manually delete them if desired.
+    # We NEVER delete music files, DJ library data, or backups.
+    # ~/Music/LibraryBackups, ~/Music/_Serato_, ~/Music/_Serato_/SmartCrates,
+    # ~/Library/Pioneer/rekordbox — all untouched.
 
     print("  ✓ Daemon stopped")
     print()
-    print("  Backups were NOT removed (~/Music/LibraryBackups).")
-    print("  Serato and Rekordbox libraries were NOT modified.")
+    print("  Music files, DJ libraries, and backups were NOT modified.")
     print()
 
 
