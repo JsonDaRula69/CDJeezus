@@ -341,25 +341,31 @@ def run_setup(*, non_interactive: bool = False) -> None:
     print()
 
     # ── Step 1: Primary DJ Software ──
-    print("  [1/8] Which is your primary DJ library?")
     serato_found = detect_serato()
     rekordbox_found = detect_rekordbox()
 
-    options = []
-    if serato_found:
-        options.append("Serato DJ (detected)")
-    else:
-        options.append("Serato DJ (not found)")
-    if rekordbox_found:
-        options.append("Rekordbox (detected)")
-    else:
-        options.append("Rekordbox (not found)")
-
-    if not non_interactive:
+    if serato_found and not rekordbox_found:
+        primary = "serato"
+        print("  [1/8] Primary DJ: Serato DJ (auto-detected)")
+    elif rekordbox_found and not serato_found:
+        primary = "rekordbox"
+        print("  [1/8] Primary DJ: Rekordbox (auto-detected)")
+    elif not non_interactive:
+        print("  [1/8] Which is your primary DJ library?")
+        options = []
+        if serato_found:
+            options.append("Serato DJ (detected)")
+        else:
+            options.append("Serato DJ (not found)")
+        if rekordbox_found:
+            options.append("Rekordbox (detected)")
+        else:
+            options.append("Rekordbox (not found)")
         choice = _menu_select(options, title="  Select your primary DJ software:")
         primary = "serato" if choice == 0 else "rekordbox"
     else:
         primary = os.environ.get("PRIMARY_DJ", "serato")
+        print(f"  [1/8] Primary DJ: {primary.title()} (from config)")
     config["primary_dj"] = primary
     print(f"  ✓ Primary: {primary.title()}")
 
