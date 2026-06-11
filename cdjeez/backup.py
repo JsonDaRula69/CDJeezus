@@ -128,17 +128,17 @@ def backup_rekordbox(backup_dir: Path) -> Path | None:
     return zip_path
 
 
-def run_backups(backup_serato: bool = True, backup_rekordbox: bool = True) -> list[Path]:
+def run_backups(do_serato: bool = True, do_rekordbox: bool = True) -> list[Path]:
     """Run configured library backups.
 
     Returns list of created backup zip paths.
     """
     results: list[Path] = []
-    if backup_serato:
+    if do_serato:
         path = backup_serato(BACKUP_DIR)
         if path:
             results.append(path)
-    if backup_rekordbox:
+    if do_rekordbox:
         path = backup_rekordbox(BACKUP_DIR)
         if path:
             results.append(path)

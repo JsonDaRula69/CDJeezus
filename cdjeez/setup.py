@@ -679,8 +679,8 @@ def run_setup(*, non_interactive: bool = False) -> None:
     if config.get("backup_enabled"):
         from .backup import run_backups
         results = run_backups(
-            backup_serato=config.get("backup_serato", False),
-            backup_rekordbox=config.get("backup_rekordbox", False),
+            do_serato=config.get("backup_serato", False),
+            do_rekordbox=config.get("backup_rekordbox", False),
         )
         if results:
             ok(f"Initial backup created ({len(results)} archive(s))")
