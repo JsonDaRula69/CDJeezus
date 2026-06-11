@@ -368,7 +368,7 @@ def discover_user_playlists(user_sets_url: str | None = None) -> list[PlaylistIn
             logger.info("Discovered %d playlists for user %d", len(all_playlists), user_id)
             return all_playlists
         if attempt < max_retries:
-            wait = 5 * attempt
+            wait = 10 + 5 * attempt
             logger.warning("SoundCloud returned 0 playlists (attempt %d/%d); retrying in %ds", attempt, max_retries, wait)
             time.sleep(wait)
             # Clear cached auth so we re-read cookies

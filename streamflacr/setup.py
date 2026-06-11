@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import CONFIG_DIR, DOWNLOAD_DIR, SERATO_DIR, STAGING_DIR
+from .config import CONFIG_DIR, DOWNLOAD_DIR, SERATO_DIR, STAGING_DIR, PID_FILE, STOP_FILE, LOG_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -254,11 +254,26 @@ def full_uninstall() -> None:
     print("  Uninstalling StreamFLACr...")
     print()
 
-    # 1. Stop the daemon
-    if kill_running_daemon():
-        print("  ✓ Stopped running daemon")
+    # 1. Stop the daemon gracefully
+    from .daemon import request_stop
+    stopped = request_stop(timeout=30)
+    if stopped:
+        print("  ✓ Stopped running daemon gracefully")
     else:
-        print("  - No daemon running")
+        print("  - No daemon running; force-killing stale processes")
+        kill_running_daemon()
+
+    # 1b. Clean up daemon runtime files
+    for runtime_file in (PID_FILE, STOP_FILE, LOG_FILE):
+        for rotated in sorted(Path(LOG_FILE.parent).glob(LOG_FILE.name + ".*")):
+            try:
+                rotated.unlink()
+            except OSError:
+                pass
+        try:
+            runtime_file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     # 2. Unload and remove LaunchAgents (current + legacy)
     for plist_path, label in [(INSTALLED_PLIST, "current"), (LEGACY_PLIST, "legacy")]:
