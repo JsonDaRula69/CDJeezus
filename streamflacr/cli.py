@@ -25,6 +25,10 @@ def main() -> None:
     setup_parser.add_argument("--non-interactive", action="store_true",
                               help="Non-interactive setup: use env vars or defaults for all prompts")
 
+    # update subcommand
+    update_parser = subparsers.add_parser("update", help="Update StreamFLACr to the latest version")
+    update_parser.add_argument("--check", action="store_true", help="Check for updates without installing")
+
     # uninstall subcommand
     subparsers.add_parser("uninstall", help="Remove all StreamFLACr artifacts (safe for Serato)")
 
@@ -42,6 +46,12 @@ def main() -> None:
         return
 
     # Print version as the very first output so it appears right after install
+    if args.command == "update":
+        from .updater import run_update
+        check_only = getattr(args, 'check', False)
+        run_update(check_only=check_only)
+        return
+
     if args.command == "uninstall":
         print(f"  StreamFLACr v{__version__}")
         from .setup import full_uninstall

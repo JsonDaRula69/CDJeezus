@@ -246,6 +246,9 @@ def full_uninstall() -> None:
     Serato crates and the _Serato_ directory are never modified during
     uninstall — that data is too sensitive. Smart crates created by
     StreamFLACr remain in place for the user to manage manually.
+
+    The user is prompted about whether to keep downloaded music files
+    (the staging data in the config directory). Everything else is removed.
     """
     print()
     print("  Uninstalling StreamFLACr...")
@@ -269,10 +272,31 @@ def full_uninstall() -> None:
         else:
             print(f"  - No {label} LaunchAgent found")
 
-    # 3. Remove config directory (~/.config/streamflacr)
+    # 3. Ask about downloaded music files before removing config
+    keep_downloads = False
     if CONFIG_DIR.exists():
-        shutil.rmtree(CONFIG_DIR)
-        print(f"  ✓ Removed config: {CONFIG_DIR}")
+        staging = CONFIG_DIR / "staging"
+        state = CONFIG_DIR / "state.json"
+        has_downloads = (staging.exists() and any(staging.iterdir())) or state.exists()
+        if has_downloads:
+            answer = input(
+                "\n  Keep downloaded music files and migration data? [Y/n]: "
+            ).strip().lower()
+            keep_downloads = answer in ("", "y", "yes")
+
+        if keep_downloads:
+            # Preserve staging dir and state.json, remove everything else
+            for item in CONFIG_DIR.iterdir():
+                if item.name in ("staging", "state.json"):
+                    continue
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+            print(f"  ✓ Removed config (kept staging & state)")
+        else:
+            shutil.rmtree(CONFIG_DIR)
+            print(f"  ✓ Removed config: {CONFIG_DIR}")
     else:
         print("  - No config directory found")
 
@@ -286,7 +310,7 @@ def full_uninstall() -> None:
     else:
         print("  - No log files found")
 
-    # 6. Remove the uv/pipx tool installation
+    # 5. Remove the uv/pipx tool installation
     uninstalled_tool = False
     result = subprocess.run(
         ["uv", "tool", "uninstall", "streamflacr"],
@@ -317,6 +341,8 @@ def full_uninstall() -> None:
     print(f"    Smart crates: {SERATO_DIR / 'SmartCrates'}")
     print(f"    Downloaded files: {DOWNLOAD_DIR}")
     print(f"    Serato backups: {BACKUP_DIR}")
+    if keep_downloads:
+        print(f"    Migration data: {CONFIG_DIR}")
     print("  ───────────────────────────────────────────")
     print()
 
