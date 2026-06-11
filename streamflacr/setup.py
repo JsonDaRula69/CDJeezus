@@ -1,7 +1,7 @@
 """Interactive setup wizard for StreamFLACr.
 
-Detects existing SoundCloud login and Soulseek installation,
-prompts for anything missing, writes .env,
+Detects DJ software, SoundCloud login, and Soulseek installation,
+configures playlist monitoring and library backups, writes .env,
 and registers the launchd daemon.
 """
 
@@ -12,30 +12,24 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import CONFIG_DIR, DOWNLOAD_DIR, SERATO_DIR, STAGING_DIR, PID_FILE, STOP_FILE, LOG_FILE
+from .config import (
+    CONFIG_DIR, DOWNLOAD_DIR, SERATO_DIR, REKORDBOX_DIR,
+    STAGING_DIR, BACKUP_DIR, PID_FILE, STOP_FILE, LOG_FILE,
+)
 
 logger = logging.getLogger(__name__)
 
 ENV_FILE = CONFIG_DIR / ".env"
 INSTALLED_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.streamflacr.plist"
-# Legacy plist name from v0.12.0 and earlier — must be cleaned up on upgrade
 LEGACY_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.streamflacr.plist"
 
 
 def kill_running_daemon() -> bool:
-    """Kill any stale streamflacr daemon from a previous run.
-
-    Unloads the LaunchAgent first (to prevent launchd from respawning it),
-    then kills any remaining Python processes.
-    """
+    """Kill any stale streamflacr daemon from a previous run."""
     import signal
-    # Unload LaunchAgents so launchd doesn't respawn the daemon
     for plist in (INSTALLED_PLIST, LEGACY_PLIST):
         if plist.exists():
-            subprocess.run(
-                ["launchctl", "unload", str(plist)],
-                capture_output=True, check=False,
-            )
+            subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, check=False)
 
     my_pid = os.getpid()
     parent_pid = os.getppid()
@@ -63,21 +57,44 @@ def kill_running_daemon() -> bool:
     return killed
 
 
-# ── Serato tools installation ─────────────────────────────────────────
+# ── DJ Software Detection ────────────────────────────────────────────
 
-# ── SoundCloud detection ──────────────────────────────────────────────
+def detect_serato() -> bool:
+    return SERATO_DIR.exists()
+
+
+def detect_rekordbox() -> bool:
+    return REKORDBOX_DIR.exists() and (REKORDBOX_DIR / "master.db").exists()
+
+
+def detect_fpcalc() -> bool:
+    try:
+        result = subprocess.run(["fpcalc", "-version"], capture_output=True, text=True, timeout=5)
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def detect_soulseek_installation() -> bool:
+    for path in [Path("/Applications/SoulseekQt.app"), Path.home() / "Applications" / "SoulseekQt.app"]:
+        if path.exists():
+            return True
+    return False
+
+
+def detect_soulseek_data() -> bool:
+    data_dir = Path.home() / ".SoulseekQt"
+    return data_dir.exists() and any(data_dir.iterdir())
+
+
+# ── SoundCloud Detection ──────────────────────────────────────────────
 
 def detect_soundcloud_login() -> bool:
-    """Check if the user is logged into SoundCloud in Chrome."""
     from .soundcloud import has_oauth
     return has_oauth()
 
 
 def extract_soundcloud_user_url() -> str | None:
-    """Extract the user's SoundCloud profile URL from the API.
-
-    Requires OAuth token from Chrome cookies.
-    """
     from .soundcloud import _api_get
     try:
         me = _api_get("me")
@@ -91,43 +108,38 @@ def extract_soundcloud_user_url() -> str | None:
 def prompt_soundcloud_login() -> None:
     print("\n  SoundCloud login not detected in Chrome.")
     print("  Opening SoundCloud login page in your browser...")
-    print("  Please log in, then come back and press Enter.\n")
     subprocess.run(["open", "https://soundcloud.com/signin"], check=False)
     input("  Press Enter once you've logged into SoundCloud in Chrome... ")
 
 
-# ── Soulseek detection ────────────────────────────────────────────────
+# ── TUI Helpers ───────────────────────────────────────────────────────
 
-def detect_soulseek_installation() -> bool:
-    for path in [
-        Path("/Applications/SoulseekQt.app"),
-        Path.home() / "Applications" / "SoulseekQt.app",
-    ]:
-        if path.exists():
-            return True
-    return False
+def _menu_select(options: list[str], title: str = "") -> int:
+    """Single-select menu using arrow keys and Enter."""
+    from simple_term_menu import TerminalMenu
+    menu = TerminalMenu(options, title=title)
+    return menu.show()
 
 
-def detect_soulseek_data() -> bool:
-    data_dir = Path.home() / ".SoulseekQt"
-    return data_dir.exists() and any(data_dir.iterdir())
+def _multi_select(options: list[str], title: str = "") -> list[int]:
+    """Multi-select menu using arrow keys, spacebar, and Enter."""
+    from simple_term_menu import TerminalMenu
+    menu = TerminalMenu(
+        options,
+        title=title,
+        multi_select=True,
+        show_multi_select_hint=True,
+    )
+    result = menu.show()
+    if result is None:
+        return []
+    return result if isinstance(result, list) else [result]
 
 
-
-def detect_fpcalc() -> bool:
-    """Check if fpcalc (chromaprint) is installed."""
-    try:
-        result = subprocess.run(
-            ["fpcalc", "-version"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
+# ── Soulseek Prompt ────────────────────────────────────────────────────
 
 def prompt_soulseek_setup() -> dict:
-    print("\n  Soulseek credentials required for downloading FLAC files.")
+    print("\n  Soulseek credentials required for downloading files.")
     print("  If you don't have an account, visit https://www.slsknet.org\n")
     username = ""
     while not username:
@@ -138,301 +150,252 @@ def prompt_soulseek_setup() -> dict:
     return {"username": username, "password": password}
 
 
-# ── .env file ──────────────────────────────────────────────────────────
+# ── .env File ─────────────────────────────────────────────────────────
 
-def write_env_file(slsk_creds: dict, user_url: str, poll_interval: int = 300) -> None:
+def write_env_file(config: dict) -> None:
+    """Write all config selections to .env."""
     content = f"""\
 # StreamFLACr configuration
 # Generated by setup wizard
 
+# Primary DJ software (serato or rekordbox)
+PRIMARY_DJ={config.get('primary_dj', 'serato')}
+
+# Two-way sync between DJ libraries
+TWO_WAY_SYNC={'1' if config.get('two_way_sync') else '0'}
+
 # Soulseek credentials
-SLSK_USERNAME={slsk_creds['username']}
-SLSK_PASSWORD={slsk_creds['password']}
+SLSK_USERNAME={config.get('slsk_username', '')}
+SLSK_PASSWORD={config.get('slsk_password', '')}
 
-# SoundCloud user URL (all playlists will be monitored automatically)
-SOUNDCLOUD_USER_URL={user_url}
+# SoundCloud user URL
+SOUNDCLOUD_USER_URL={config.get('user_url', '')}
 
-# Poll interval in seconds
-SOUNDCLOUD_POLL_INTERVAL={poll_interval}
+# Playlist monitoring (all or custom)
+PLAYLIST_MODE={config.get('playlist_mode', 'all')}
+MONITORED_PLAYLISTS={','.join(config.get('monitored_playlists', []))}
 
-# Download directory (Serato Auto Import watches this folder)
-DOWNLOAD_DIR={DOWNLOAD_DIR}
+# Library backups
+BACKUP_ENABLED={'1' if config.get('backup_enabled') else '0'}
+BACKUP_SERATO={'1' if config.get('backup_serato') else '0'}
+BACKUP_REKORDBOX={'1' if config.get('backup_rekordbox') else '0'}
+BACKUP_DIR={config.get('backup_dir', str(BACKUP_DIR))}
 
-# Staging directory (files are tagged here before importing)
+# Download directory
+DOWNLOAD_DIR={config.get('download_dir', str(DOWNLOAD_DIR))}
+
+# Staging directory
 STAGING_DIR={STAGING_DIR}
 SERATO_DIR={SERATO_DIR}
+REKORDBOX_DIR={REKORDBOX_DIR}
 
 # Search preferences
 SEARCH_TIMEOUT=30
 PREFER_FREE_SLOTS=1
 MIN_FILESIZE_MB=5
 
-# Audio fingerprinting (optional — enhances download verification)
-# Get an API key at https://acoustid.org/api-key
-ACOUSTID_API_KEY=
+# Audio fingerprinting
+ACOUSTID_API_KEY={config.get('acoustid_api_key', '')}
 FINGERPRINT_VERIFY=1
+
+# Library upscaling
+UPSCALE_ENABLED=0
 """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     ENV_FILE.write_text(content)
     print(f"\n  Config written to {ENV_FILE}")
 
 
-# ── LaunchDaemon ───────────────────────────────────────────────────────
+# ── LaunchDaemon ──────────────────────────────────────────────────────
 
 def _generate_plist() -> str:
-    """Generate LaunchDaemon plist content dynamically."""
-    import shutil
-    streamflacr_path = shutil.which("streamflacr") or "streamflacr"
-    log_dir = Path.home() / "Library" / "Logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    python_path = sys.executable
+    return f"""\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>com.streamflacr</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{streamflacr_path}</string>
+        <string>{python_path}</string>
+        <string>-m</string>
+        <string>streamflacr</string>
         <string>--daemon</string>
     </array>
-    <key>WorkingDirectory</key>
-    <string>{Path.home()}</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>{Path(streamflacr_path).parent}:/usr/local/bin:/usr/bin:/bin</string>
-        <key>STREAMFLACR_CONFIG_DIR</key>
-        <string>{CONFIG_DIR}</string>
-    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <false/>
     <key>StandardOutPath</key>
-    <string>{log_dir / "streamflacr.log"}</string>
+    <string>{LOG_FILE}</string>
     <key>StandardErrorPath</key>
-    <string>{log_dir / "streamflacr.err"}</string>
+    <string>{LOG_FILE}</string>
+    <key>WorkingDirectory</key>
+    <string>{Path.home()}</string>
 </dict>
-</plist>"""
+</plist>
+"""
 
 
 def register_launchdaemon() -> bool:
-    kill_running_daemon()
-    # Clean up legacy plist from v0.12.0 and earlier
-    if LEGACY_PLIST.exists():
-        subprocess.run(
-            ["launchctl", "unload", str(LEGACY_PLIST)],
-            capture_output=True, check=False,
-        )
-        LEGACY_PLIST.unlink()
     plist_content = _generate_plist()
-    subprocess.run(
-        ["launchctl", "unload", str(INSTALLED_PLIST)],
-        capture_output=True, check=False,
-    )
+    INSTALLED_PLIST.parent.mkdir(parents=True, exist_ok=True)
     INSTALLED_PLIST.write_text(plist_content)
+
+    # Unload old plist if present
+    for plist in (INSTALLED_PLIST, LEGACY_PLIST):
+        if plist.exists():
+            subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, check=False)
+
+    # Remove legacy plist
+    if LEGACY_PLIST.exists():
+        LEGACY_PLIST.unlink()
+
     result = subprocess.run(
         ["launchctl", "load", str(INSTALLED_PLIST)],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True,
     )
     if result.returncode == 0:
-        print(f"  ✓ LaunchDaemon registered: {INSTALLED_PLIST.name}")
-        print("  StreamFLACr will start automatically on login.")
+        logger.info("LaunchDaemon registered: %s", INSTALLED_PLIST)
         return True
-    print(f"  Warning: could not load LaunchDaemon: {result.stderr.strip()}")
+    logger.error("Failed to register LaunchDaemon: %s", result.stderr)
     return False
 
 
 def unregister_launchdaemon() -> bool:
-    """Stop and remove the LaunchDaemon. Does NOT touch Serato data."""
-    kill_running_daemon()
-    subprocess.run(
-        ["launchctl", "unload", str(INSTALLED_PLIST)],
-        capture_output=True, check=False,
-    )
-    if INSTALLED_PLIST.exists():
-        INSTALLED_PLIST.unlink()
-        print("  LaunchDaemon removed.")
-        return True
-    return False
+    for plist in (INSTALLED_PLIST, LEGACY_PLIST):
+        if plist.exists():
+            subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, check=False)
+            plist.unlink()
+    logger.info("LaunchDaemon unregistered")
+    return True
 
+
+# ── Uninstall ──────────────────────────────────────────────────────────
 
 def full_uninstall() -> None:
-    """Remove all StreamFLACr artifacts except Serato data.
+    """Interactive uninstall. Asks about keeping migration data."""
+    from . import __version__
+    print(f"\n  StreamFLACr v{__version__} Uninstall\n")
 
-    Serato crates and the _Serato_ directory are never modified during
-    uninstall — that data is too sensitive. Smart crates created by
-    StreamFLACr remain in place for the user to manage manually.
-
-    The user is prompted about whether to keep downloaded music files
-    (the staging data in the config directory). Everything else is removed.
-    """
-    print()
-    print("  Uninstalling StreamFLACr...")
-    print()
-
-    # 1. Stop the daemon gracefully
+    # Stop daemon
     from .daemon import request_stop
-    stopped = request_stop(timeout=30)
-    if stopped:
-        print("  ✓ Stopped running daemon gracefully")
-    else:
-        print("  - No daemon running; force-killing stale processes")
-        kill_running_daemon()
+    request_stop(timeout=30)
 
-    # 1b. Clean up daemon runtime files
-    for runtime_file in (PID_FILE, STOP_FILE, LOG_FILE):
-        for rotated in sorted(Path(LOG_FILE.parent).glob(LOG_FILE.name + ".*")):
-            try:
-                rotated.unlink()
-            except OSError:
-                pass
-        try:
-            runtime_file.unlink(missing_ok=True)
-        except OSError:
-            pass
+    # Unregister daemon
+    unregister_launchdaemon()
 
-    # 2. Unload and remove LaunchAgents (current + legacy)
-    for plist_path, label in [(INSTALLED_PLIST, "current"), (LEGACY_PLIST, "legacy")]:
-        subprocess.run(
-            ["launchctl", "unload", str(plist_path)],
-            capture_output=True, check=False,
-        )
-        if plist_path.exists():
-            plist_path.unlink()
-            print(f"  ✓ Removed {label} LaunchAgent plist")
-        else:
-            print(f"  - No {label} LaunchAgent found")
+    # Ask about migration data
+    keep_data = input("  Keep downloaded music files and migration data? [Y/n]: ").strip().lower()
+    keep_data = keep_data in ("", "y", "yes")
 
-    # 3. Ask about downloaded music files before removing config
-    keep_downloads = False
+    # Remove config
     if CONFIG_DIR.exists():
-        staging = CONFIG_DIR / "staging"
-        state = CONFIG_DIR / "state.json"
-        has_downloads = (staging.exists() and any(staging.iterdir())) or state.exists()
-        if has_downloads:
-            answer = input(
-                "\n  Keep downloaded music files and migration data? [Y/n]: "
-            ).strip().lower()
-            keep_downloads = answer in ("", "y", "yes")
-
-        if keep_downloads:
-            # Preserve staging dir and state.json, remove everything else
+        if keep_data:
+            # Keep state.json and .env, remove everything else
             for item in CONFIG_DIR.iterdir():
-                if item.name in ("staging", "state.json"):
+                if item.name in ("state.json", ".env"):
                     continue
                 if item.is_dir():
-                    shutil.rmtree(item)
+                    shutil.rmtree(item, ignore_errors=True)
                 else:
-                    item.unlink()
-            print(f"  ✓ Removed config (kept staging & state)")
+                    item.unlink(missing_ok=True)
+            print("  ✓ Config removed (kept state.json and .env)")
         else:
-            shutil.rmtree(CONFIG_DIR)
-            print(f"  ✓ Removed config: {CONFIG_DIR}")
-    else:
-        print("  - No config directory found")
+            shutil.rmtree(CONFIG_DIR, ignore_errors=True)
+            print("  ✓ All config removed")
 
-    # 4. Remove log files
-    removed_logs = 0
-    for log in Path.home().glob("Library/Logs/streamflacr*"):
-        log.unlink()
-        removed_logs += 1
-    if removed_logs:
-        print(f"  ✓ Removed {removed_logs} log file(s)")
-    else:
-        print("  - No log files found")
+    # Remove plist
+    for plist in (INSTALLED_PLIST, LEGACY_PLIST):
+        if plist.exists():
+            subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, check=False)
+            plist.unlink()
 
-    # 5. Remove the uv/pipx tool installation
-    uninstalled_tool = False
-    result = subprocess.run(
-        ["uv", "tool", "uninstall", "streamflacr"],
-        capture_output=True, text=True,
-    )
-    if result.returncode == 0:
-        print("  ✓ Uninstalled uv tool")
-        uninstalled_tool = True
-    else:
-        # Try pipx
-        result2 = subprocess.run(
-            ["pipx", "uninstall", "streamflacr"],
-            capture_output=True, text=True,
-        )
-        if result2.returncode == 0:
-            print("  ✓ Uninstalled pipx tool")
-            uninstalled_tool = True
-    if not uninstalled_tool:
-        print("  - Could not auto-uninstall the tool; run manually:")
-        print("    uv tool uninstall streamflacr")
+    # Remove Serato backups (but NOT smart crates or library files)
+    from .serato_crate import BACKUP_DIR as SERATO_BACKUP_DIR
+    if SERATO_BACKUP_DIR.exists() and not keep_data:
+        shutil.rmtree(SERATO_BACKUP_DIR, ignore_errors=True)
+        print("  ✓ Serato backups removed")
 
+    # Note: we never touch _Serato_ or Rekordbox library data
+    print("  ✓ LaunchAgent removed")
+    print("  ✓ Daemon stopped")
     print()
-    print("  ───────────────────────────────────────────")
-    print("  StreamFLACr has been fully uninstalled.")
-    print()
-    from .serato_crate import BACKUP_DIR
-    print("  The following were NOT removed (Serato data is sensitive):")
-    print(f"    Smart crates: {SERATO_DIR / 'SmartCrates'}")
-    print(f"    Downloaded files: {DOWNLOAD_DIR}")
-    print(f"    Serato backups: {BACKUP_DIR}")
-    if keep_downloads:
-        print(f"    Migration data: {CONFIG_DIR}")
-    print("  ───────────────────────────────────────────")
+    print("  Serato and Rekordbox libraries were NOT modified.")
     print()
 
 
-# ── Main wizard ────────────────────────────────────────────────────────
+# ── Main Wizard ────────────────────────────────────────────────────────
 
 def run_setup(*, non_interactive: bool = False) -> None:
+    """Run the full interactive setup wizard."""
+    config: dict = {}
+
     print()
     print("  ───────────────────────────────────────────")
     print("   StreamFLACr Setup Wizard")
     print("  ───────────────────────────────────────────")
     print()
 
-    # ── Step 1: SoundCloud ──
-    print("  [1/4] Checking SoundCloud login...")
-    sc_logged_in = detect_soundcloud_login()
-    user_url = None
-    if sc_logged_in:
-        print("  ✓ SoundCloud login detected in Chrome")
-        user_url = extract_soundcloud_user_url()
-        if user_url:
-            print(f"  ✓ User profile: {user_url}")
+    # ── Step 1: Primary DJ Software ──
+    print("  [1/7] Which is your primary DJ library?")
+    serato_found = detect_serato()
+    rekordbox_found = detect_rekordbox()
+
+    options = []
+    if serato_found:
+        options.append("Serato DJ (detected)")
+    else:
+        options.append("Serato DJ (not found)")
+    if rekordbox_found:
+        options.append("Rekordbox (detected)")
+    else:
+        options.append("Rekordbox (not found)")
+
+    if not non_interactive:
+        choice = _menu_select(options, title="  Select your primary DJ software:")
+        primary = "serato" if choice == 0 else "rekordbox"
+    else:
+        primary = os.environ.get("PRIMARY_DJ", "serato")
+    config["primary_dj"] = primary
+    print(f"  ✓ Primary: {primary.title()}")
+
+    # ── Step 2: Secondary DJ & Two-Way Sync ──
+    print("\n  [2/7] Checking for secondary DJ library...")
+    secondary = "rekordbox" if primary == "serato" else "serato"
+    secondary_found = detect_rekordbox() if secondary == "rekordbox" else detect_serato()
+
+    if secondary_found:
+        print(f"  ✓ {secondary.title()} detected!")
+        if not non_interactive:
+            answer = input(f"  Enable 2-way sync with {secondary.title()}? [y/N]: ").strip().lower()
+            config["two_way_sync"] = answer in ("y", "yes")
         else:
-            print("  Could not auto-detect profile URL (token may need refreshing)")
+            config["two_way_sync"] = os.environ.get("TWO_WAY_SYNC", "0") == "1"
+        if config["two_way_sync"]:
+            print(f"  ✓ 2-way sync with {secondary.title()} enabled")
+        else:
+            print(f"  ✗ 2-way sync disabled")
     else:
-        print("  ✗ SoundCloud login not found in Chrome")
-        if non_interactive:
-            print("  Non-interactive mode: opening SoundCloud login page")
-            print("  Please log in, then re-run `streamflacr setup`.")
-            subprocess.run(["open", "https://soundcloud.com/signin"], check=False)
-            sys.exit(1)
-        prompt_soundcloud_login()
-        if detect_soundcloud_login():
-            user_url = extract_soundcloud_user_url()
-            if user_url:
-                print(f"  ✓ User profile: {user_url}")
+        print(f"  ✗ {secondary.title()} not detected!")
+        print(f'  Library sync will be disabled, which is kinda dumb cause damn I')
+        print(f'  worked so hard on that shit but whatever do you I guess.')
+        print(f'  Press Enter, let\'s keep going you broke degenerate')
+        config["two_way_sync"] = False
+        if not non_interactive:
+            input()
 
-    if not user_url:
-        if non_interactive:
-            print("  ERROR: Could not detect SoundCloud profile. Set SOUNDCLOUD_USER_URL in .env.")
-            sys.exit(1)
-        print("\n  Could not auto-detect your SoundCloud profile URL.")
-        print("  Find it at: https://soundcloud.com/ (click your avatar > Profile)\n")
-        user_url = ""
-        while not user_url:
-            user_url = input("  SoundCloud profile URL: ").strip()
-
-    # ── Step 2: Audio fingerprinting ──
-    fpcalc_available = detect_fpcalc()
-    if fpcalc_available:
-        print("  ✓ fpcalc (chromaprint) found — audio verification enabled")
+    # Set download dir based on primary
+    if primary == "serato":
+        config["download_dir"] = str(SERATO_DIR / "Auto Import")
     else:
-        print("  ✗ fpcalc not found — audio verification disabled")
-        print("  Install chromaprint for download verification: brew install chromaprint")
+        config["download_dir"] = str(Path.home() / "Music" / "RekordboxAutoImport")
 
     # ── Step 3: Soulseek ──
-    print("\n  [3/4] Checking Soulseek...")
+    print("\n  [3/7] Soulseek setup...")
     slsk_installed = detect_soulseek_installation()
     slsk_has_data = detect_soulseek_data()
     if slsk_installed:
@@ -450,43 +413,312 @@ def run_setup(*, non_interactive: bool = False) -> None:
     else:
         print("  Note: No SoulseekQt login data found.")
     if non_interactive:
-        slsk_username = os.environ.get("SLSK_USERNAME", "")
-        slsk_password = os.environ.get("SLSK_PASSWORD", "")
-        if not slsk_username or not slsk_password:
+        config["slsk_username"] = os.environ.get("SLSK_USERNAME", "")
+        config["slsk_password"] = os.environ.get("SLSK_PASSWORD", "")
+        if not config["slsk_username"] or not config["slsk_password"]:
             print("  ERROR: Non-interactive mode requires SLSK_USERNAME and SLSK_PASSWORD env vars.")
             sys.exit(1)
-        slsk_creds = {"username": slsk_username, "password": slsk_password}
     else:
         slsk_creds = prompt_soulseek_setup()
+        config["slsk_username"] = slsk_creds["username"]
+        config["slsk_password"] = slsk_creds["password"]
 
-    # ── Step 4: Write config + register daemon ──
-    print("\n  [4/4] Finishing up...")
-    write_env_file(slsk_creds, user_url)
-    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    STAGING_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"  ✓ Download directory: {DOWNLOAD_DIR}")
-    print(f"  ✓ All playlists will be monitored automatically")
-
-    print()
-    if non_interactive:
-        register_launchdaemon()
+    # ── Step 4: SoundCloud ──
+    print("\n  [4/7] Checking SoundCloud login...")
+    sc_logged_in = detect_soundcloud_login()
+    user_url = None
+    if sc_logged_in:
+        print("  ✓ SoundCloud login detected in Chrome")
+        user_url = extract_soundcloud_user_url()
+        if user_url:
+            print(f"  ✓ User profile: {user_url}")
+        else:
+            # Try refreshing via SoundCloud app launch
+            print("  Token may need refreshing, launching SoundCloud app...")
+            _launch_soundcloud_app()
+            import time
+            time.sleep(3)
+            user_url = extract_soundcloud_user_url()
+            if user_url:
+                print(f"  ✓ User profile: {user_url}")
     else:
+        print("  ✗ SoundCloud login not found in Chrome")
+        if not non_interactive:
+            prompt_soundcloud_login()
+            if detect_soundcloud_login():
+                user_url = extract_soundcloud_user_url()
+
+    if not user_url:
+        if non_interactive:
+            sys.exit(1)
+        print("\n  Could not auto-detect your SoundCloud profile URL.")
+        user_url = ""
+        while not user_url:
+            user_url = input("  SoundCloud profile URL: ").strip()
+    config["user_url"] = user_url
+
+    # ── Step 5: Playlist Selection ──
+    print("\n  [5/7] Playlist monitoring...")
+    if not non_interactive:
+        choice = _menu_select(
+            ["All playlists", "Custom selection"],
+            title="  Download all playlists or custom selection?",
+        )
+        if choice == 0:
+            config["playlist_mode"] = "all"
+            config["monitored_playlists"] = []
+            print("  ✓ All playlists will be monitored")
+        else:
+            # Fetch and display playlists for multi-select
+            from .soundcloud import discover_user_playlists
+            print("  Fetching your playlists...")
+            playlists = discover_user_playlists()
+            if not playlists:
+                print("  No playlists found! Defaulting to all playlists.")
+                config["playlist_mode"] = "all"
+                config["monitored_playlists"] = []
+            else:
+                playlist_names = [p.title for p in playlists]
+                selected = _multi_select(
+                    playlist_names,
+                    title="  Select playlists to monitor (Space to toggle, Enter to confirm):",
+                )
+                if not selected:
+                    config["playlist_mode"] = "all"
+                    config["monitored_playlists"] = []
+                    print("  No playlists selected — monitoring all")
+                else:
+                    config["playlist_mode"] = "custom"
+                    config["monitored_playlists"] = [playlists[i].url for i in selected]
+                    print(f"  ✓ {len(selected)} playlist(s) selected")
+    else:
+        config["playlist_mode"] = os.environ.get("PLAYLIST_MODE", "all")
+        config["monitored_playlists"] = [
+            u.strip() for u in os.environ.get("MONITORED_PLAYLISTS", "").split(",") if u.strip()
+        ]
+
+    # ── Step 6: Library Backups ──
+    print("\n  [6/7] Library backups...")
+    if not non_interactive:
+        answer = input("  Enable library backups? [y/N]: ").strip().lower()
+        config["backup_enabled"] = answer in ("y", "yes")
+    else:
+        config["backup_enabled"] = os.environ.get("BACKUP_ENABLED", "0") == "1"
+
+    if config["backup_enabled"]:
+        if not non_interactive:
+            # Which libraries to back up
+            backup_options = []
+            if detect_serato():
+                backup_options.append("Serato")
+            if detect_rekordbox():
+                backup_options.append("Rekordbox")
+            if not backup_options:
+                print("  No DJ libraries detected for backup")
+                config["backup_enabled"] = False
+            else:
+                selected = _multi_select(
+                    backup_options,
+                    title="  Select which libraries to back up (Space to toggle, Enter to confirm):",
+                )
+                config["backup_serato"] = "Serato" in [backup_options[i] for i in selected]
+                config["backup_rekordbox"] = "Rekordbox" in [backup_options[i] for i in selected]
+                print(f"  ✓ Backing up: {', '.join(backup_options[i] for i in selected)}")
+        else:
+            config["backup_serato"] = detect_serato()
+            config["backup_rekordbox"] = detect_rekordbox()
+
+        config["backup_dir"] = str(BACKUP_DIR)
+    else:
+        config["backup_serato"] = False
+        config["backup_rekordbox"] = False
+        config["backup_dir"] = str(BACKUP_DIR)
+        print("  ✗ Backups disabled")
+
+    # ── Step 7: Config Summary & Confirm ──
+    while True:
+        print("\n  [7/7] Configuration summary:")
+        print(f"    Primary DJ:        {config.get('primary_dj', 'serato').title()}")
+        print(f"    2-way sync:        {'Yes' if config.get('two_way_sync') else 'No'}")
+        print(f"    Soulseek:          {config.get('slsk_username', '')}")
+        print(f"    SoundCloud:        {config.get('user_url', '')}")
+        print(f"    Playlists:         {config.get('playlist_mode', 'all').title()}")
+        if config.get('playlist_mode') == 'custom':
+            print(f"    Selected:          {len(config.get('monitored_playlists', []))} playlist(s)")
+        print(f"    Backups:           {'Yes' if config.get('backup_enabled') else 'No'}")
+        if config.get('backup_enabled'):
+            libs = []
+            if config.get('backup_serato'):
+                libs.append("Serato")
+            if config.get('backup_rekordbox'):
+                libs.append("Rekordbox")
+            print(f"    Backup libs:       {', '.join(libs)}")
+        print(f"    Download dir:      {config.get('download_dir', '')}")
+        print()
+
+        if not non_interactive:
+            answer = input("  Look good to you? [Y/n]: ").strip().lower()
+            if answer in ("", "y", "yes"):
+                break
+            # Let them edit specific configs
+            edit_options = [
+                "Primary DJ software",
+                "2-way sync",
+                "Soulseek credentials",
+                "SoundCloud",
+                "Playlist selection",
+                "Library backups",
+                "Never mind, it's all good",
+            ]
+            choice = _menu_select(edit_options, title="  Which config to edit?")
+            if choice == 6:  # "Never mind"
+                break
+            # Re-run the relevant step by looping back
+            _edit_config_step(choice, config)
+        else:
+            break
+
+    # ── Disclaimer ──
+    print()
+    print("  ───────────────────────────────────────────")
+    print("  Alright bro, I'm telling you straight up that you're only")
+    print("  supposed to be using this for your own music that you have")
+    print("  rights to thats hosted on a private SoulSeek server that")
+    print("  also belongs to you. This is for backup and syncing only")
+    print("  and serves no other purpose. Also soundcloud might get")
+    print("  pissy with you if you don't have an Artist Pro membership")
+    print("  so use at your own risk. I think I worked around that but")
+    print("  idk ask naveen to do better")
+    print("  ───────────────────────────────────────────")
+    print()
+
+    if not non_interactive:
+        answer = input("  Agreed / Wait What? ").strip().lower()
+        if "wait" in answer:
+            print()
+            print("  lol fuck off.")
+            print("  It'll uninstall automatically if you close the window.")
+            print()
+            # Wait for them to close or agree
+            import select
+            try:
+                answer2 = input("  ...Still here? Agreed? [Y/n]: ").strip().lower()
+                if answer2 not in ("", "y", "yes"):
+                    # Run uninstall before exiting
+                    full_uninstall()
+                    sys.exit(0)
+            except EOFError:
+                full_uninstall()
+                sys.exit(0)
+
+    # ── Write config and register daemon ──
+    write_env_file(config)
+
+    download_dir = Path(config.get("download_dir", str(DOWNLOAD_DIR)))
+    download_dir.mkdir(parents=True, exist_ok=True)
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"  ✓ Download directory: {download_dir}")
+    print(f"  ✓ Staging directory: {STAGING_DIR}")
+
+    # Run initial backup if enabled
+    if config.get("backup_enabled"):
+        from .backup import run_backups
+        results = run_backups(
+            backup_serato=config.get("backup_serato", False),
+            backup_rekordbox=config.get("backup_rekordbox", False),
+        )
+        if results:
+            print(f"  ✓ Initial backup created ({len(results)} archive(s))")
+
+    # Register daemon
+    if not non_interactive:
         answer = input("  Start StreamFLACr automatically on login? [Y/n]: ").strip().lower()
         if answer in ("", "y", "yes"):
             register_launchdaemon()
+            print("  ✓ LaunchDaemon registered")
         else:
             print("  Skipping daemon registration. Run `streamflacr --daemon` to start manually.")
+    else:
+        register_launchdaemon()
 
     print()
     print("  ───────────────────────────────────────────")
-    print("  Setup complete!")
-    print()
-    print("  All your SoundCloud playlists are now being monitored.")
-    print("  New tracks will be auto-downloaded as FLAC and tagged with")
-    print("  the playlist name as the Comment field for Serato smart crates.")
-    print()
-    print("  Run now:       streamflacr")
-    print("  Run as daemon:  streamflacr --daemon")
-    print("  Re-run setup:   streamflacr setup")
+    print("  Setup complete! Deploying in 3...")
     print("  ───────────────────────────────────────────")
+
+    import time
+    time.sleep(3)
     print()
+
+
+def _edit_config_step(step: int, config: dict) -> None:
+    """Re-run a specific setup step to edit config."""
+    if step == 0:  # Primary DJ
+        serato_found = detect_serato()
+        rekordbox_found = detect_rekordbox()
+        options = []
+        if serato_found:
+            options.append("Serato DJ (detected)")
+        else:
+            options.append("Serato DJ (not found)")
+        if rekordbox_found:
+            options.append("Rekordbox (detected)")
+        else:
+            options.append("Rekordbox (not found)")
+        choice = _menu_select(options, title="  Select your primary DJ software:")
+        config["primary_dj"] = "serato" if choice == 0 else "rekordbox"
+    elif step == 1:  # 2-way sync
+        secondary = "rekordbox" if config["primary_dj"] == "serato" else "serato"
+        answer = input(f"  Enable 2-way sync with {secondary.title()}? [y/N]: ").strip().lower()
+        config["two_way_sync"] = answer in ("y", "yes")
+    elif step == 2:  # Soulseek
+        slsk_creds = prompt_soulseek_setup()
+        config["slsk_username"] = slsk_creds["username"]
+        config["slsk_password"] = slsk_creds["password"]
+    elif step == 3:  # SoundCloud
+        if not detect_soundcloud_login():
+            prompt_soundcloud_login()
+        user_url = extract_soundcloud_user_url()
+        if not user_url:
+            user_url = input("  SoundCloud profile URL: ").strip()
+        config["user_url"] = user_url
+    elif step == 4:  # Playlists
+        choice = _menu_select(
+            ["All playlists", "Custom selection"],
+            title="  Download all playlists or custom selection?",
+        )
+        if choice == 0:
+            config["playlist_mode"] = "all"
+            config["monitored_playlists"] = []
+        else:
+            from .soundcloud import discover_user_playlists
+            playlists = discover_user_playlists()
+            if playlists:
+                playlist_names = [p.title for p in playlists]
+                selected = _multi_select(playlist_names, title="  Select playlists:")
+                config["playlist_mode"] = "custom"
+                config["monitored_playlists"] = [playlists[i].url for i in selected]
+    elif step == 5:  # Backups
+        answer = input("  Enable library backups? [y/N]: ").strip().lower()
+        config["backup_enabled"] = answer in ("y", "yes")
+        if config["backup_enabled"]:
+            backup_options = []
+            if detect_serato():
+                backup_options.append("Serato")
+            if detect_rekordbox():
+                backup_options.append("Rekordbox")
+            if backup_options:
+                selected = _multi_select(backup_options, title="  Select which libraries to back up:")
+                config["backup_serato"] = "Serato" in [backup_options[i] for i in selected]
+                config["backup_rekordbox"] = "Rekordbox" in [backup_options[i] for i in selected]
+
+
+def _launch_soundcloud_app() -> None:
+    """Launch SoundCloud PWA app to refresh OAuth token."""
+    sc_app = Path.home() / "Applications" / "Chrome Apps.localized" / "SoundCloud.app"
+    if sc_app.exists():
+        subprocess.run(["open", str(sc_app)], check=False)
+    else:
+        subprocess.run(["open", "-a", "Google Chrome", "https://soundcloud.com"], check=False)

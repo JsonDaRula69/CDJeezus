@@ -27,8 +27,14 @@ from .config import (
     SOUNDCLOUD_POLL_INTERVAL,
     SERATO_CHECK_INTERVAL,
     FINGERPRINT_VERIFY,
+    BACKUP_ENABLED,
+    BACKUP_SERATO,
+    BACKUP_REKORDBOX,
+    PLAYLIST_MODE,
+    MONITORED_PLAYLISTS,
 )
 from .daemon import write_pid, remove_pid, should_stop, clear_stop_flag
+from .backup import run_backups
 from .fingerprint import check_fpcalc, verify_download
 from .match import filter_and_rank_candidates, extract_versions
 from .metadata import tag_file, enrich_metadata
@@ -251,6 +257,11 @@ async def sync_playlist(
     serato_active: bool,
 ) -> None:
     """Download all new tracks from a playlist that we haven't seen before."""
+    # Skip playlists not in the monitored list (when using custom mode)
+    if PLAYLIST_MODE == "custom" and playlist.url not in MONITORED_PLAYLISTS:
+        logger.debug("Skipping unmonitored playlist: '%s'", playlist.title)
+        return
+
     tracks = await asyncio.to_thread(fetch_playlist_tracks, playlist.url)
 
     if not tracks:
@@ -398,6 +409,15 @@ async def graceful_shutdown(slsk: SoulseekDownloader, state: StateManager) -> No
     # Save state
     state.save()
 
+    # Run post-session backup if enabled
+    if BACKUP_ENABLED:
+        logger.info("Running post-session backup...")
+        await asyncio.to_thread(
+            run_backups,
+            backup_serato=BACKUP_SERATO,
+            backup_rekordbox=BACKUP_REKORDBOX,
+        )
+
     # Disconnect from Soulseek
     try:
         await slsk.disconnect()
@@ -433,6 +453,15 @@ async def amain(daemon: bool = False) -> None:
 
     # Write PID file
     write_pid()
+
+    # Run pre-session backup if enabled
+    if BACKUP_ENABLED:
+        logger.info("Running pre-session backup...")
+        await asyncio.to_thread(
+            run_backups,
+            backup_serato=BACKUP_SERATO,
+            backup_rekordbox=BACKUP_REKORDBOX,
+        )
 
     try:
         await slsk.connect()

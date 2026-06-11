@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "streamflacr"
-version = "0.25.0"
+version = "0.26.0"
 description = "Auto-download FLAC from Soulseek for SoundCloud playlist additions"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,6 +18,7 @@ dependencies = [
     "python-dotenv>=1.2",
     "pydantic-settings>=2.4",
     "requests>=2.31",
+    "simple-term-menu>=1.6",
 ]
 
 [project.scripts]

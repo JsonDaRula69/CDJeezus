@@ -1,6 +1,6 @@
 # StreamFLACr — Project Knowledge Base
 
-**Last updated:** v0.25.0
+**Last updated:** v0.26.0
 **Stack:** Python 3.11+, macOS, aioslsk, mutagen, serato-tools, pydantic-settings
 
 ## Overview
@@ -17,6 +17,8 @@ streamflacr/
 ├── config.py            # Env-based config via .env in ~/.config/streamflacr/
 ├── daemon.py            # PID tracking, stop signaling (SIGUSR1 + flag file), single-instance, log tailing
 ├── fingerprint.py       # Audio fingerprinting via chromaprint/AcoustID for download verification
+├── backup.py            # Library backup system (zip Serato/Rekordbox metadata)
+├── library_scan.py      # Local library scanning and AcoustID fingerprint assignment
 ├── soundcloud.py        # API v2 with dual-attempt auth (OAuth first, client_id fallback)
 ├── soulseek.py           # Search/download via aioslsk; graceful port conflict handling
 ├── match.py              # Fuzzy matching: filename parsing, version descriptors, scoring
@@ -44,10 +46,14 @@ streamflacr/
 | Change daemon poll interval | `config.py` | `SOUNDCLOUD_POLL_INTERVAL` (default 300s) |
 | Change backup rotation | `serato_crate.py` | `MAX_BACKUPS = 5` |
 | Fix OAuth auth flow | `soundcloud.py` | `_get_user_id()` — Chrome launch + 3 retries |
-| Fix setup wizard steps | `setup.py` | `run_setup()` — 4 steps (SoundCloud, Fingerprinting, Soulseek, Config) |
+| Fix setup wizard steps | `setup.py` | `run_setup()` — 7 steps (DJ software, 2-way sync, Soulseek, SoundCloud, Playlists, Backups, Confirm) |
 | Change state schema | `state.py` + `updater.py` | `STATE_VERSION`, `_migrate_state()` |
 | Change fingerprint verification | `fingerprint.py` | `verify_download()`, `check_fpcalc()`, `lookup_acoustid()` |
 | Change AcoustID config | `config.py` | `ACOUSTID_API_KEY`, `FINGERPRINT_VERIFY` |
+| Change library backup | `backup.py` | `run_backups()`, `backup_serato()`, `backup_rekordbox()` |
+| Change library scanning | `library_scan.py` | `scan_serato_library()`, `fingerprint_library_tracks()` |
+| Change DJ software config | `config.py` | `PRIMARY_DJ`, `TWO_WAY_SYNC`, `REKORDBOX_DIR` |
+| Change playlist mode | `config.py` | `PLAYLIST_MODE`, `MONITORED_PLAYLISTS` |
 
 ## Architecture & Design Decisions
 
@@ -118,6 +124,34 @@ If verification fails (confidence < 0.5), StreamFLACr skips the download and tri
 - `FINGERPRINT_VERIFY=1` (default) enables verification; set to `0` to disable
 - Setup wizard step 2 checks for `fpcalc` and suggests `brew install chromaprint`
 
+### Library Backup System
+
+Backs up Serato and Rekordbox metadata (not audio files) as zip archives to `~/Music/LibraryBackups`.
+
+**Serato backup excludes**: `Auto Import`, `Imported`, `Recording`, `SeratoVideo`, `Metadata/SoundCloud` (5.8GB of cached album art). Everything else (database V2, SmartCrates, Subcrates, History, crate files) is included. Typical backup size: ~45 MB.
+
+**Rekordbox backup includes**: `master.db`, `ExtData.edb`, playlist XMLs, `share/` directory. No audio files.
+
+Backups run:
+- Before every StreamFLACr session (on startup)
+- After every session (on idle/shutdown)
+- On exit of the selected DJ software(s)
+- Max 10 backups retained (oldest auto-deleted)
+
+### Local Library Upscaling
+
+After SoundCloud sync and AcoustID fingerprinting of the local library, StreamFLACr can offer to upgrade low-quality files (MP3/AAC) to lossless (FLAC/AIFF) by searching Soulseek for higher-quality versions.
+
+**Warning**: This process replaces audio files in the DJ library. Serato/Rekordbox beatgrids, cues, and loops are stored in separate metadata files (`.dat`/ANLZ files), not in the audio files themselves, so they *should* survive a file replacement. But this hasn't been tested on a production library yet.
+
+The upscaling flow:
+1. Scan primary DJ library and identify lossy files
+2. Fingerprint all local files with chromaprint
+3. Prompt user with warning about beatgrids/cues
+4. Search Soulseek for lossless versions
+5. Verify via fingerprinting that the replacement is the same recording
+6. Replace the file (keeping the same filename for compatibility)
+
 ### Data Migration
 When any code change modifies the format of `state.json`, config, or other operational data, a migration step must be added to `updater._migrate_state()`. Similarly, any code change requires evaluating whether the installer (`setup.py`) or uninstaller (`full_uninstall()`) need updates.
 
@@ -175,6 +209,10 @@ streamflacr uninstall    # Interactive uninstall (asks about keeping migration d
 - **Single instance**: Running `streamflacr` when a daemon is already running tails the log file instead of starting a duplicate. `--force` overrides this.
 - **Log file**: `~/.config/streamflacr/streamflacr.log` (rotating, 5MB max, 3 backups). Both console and file handlers are always active.
 - **PID file**: `~/.config/streamflacr/streamflacr.pid` tracks the running daemon process. Stale PIDs are cleaned up automatically.
+- **Primary DJ**: Configured via `PRIMARY_DJ` (serato or rekordbox). Determines which Auto Import folder to use.
+- **Two-way sync**: `TWO_WAY_SYNC=1` enables syncing between Serato and Rekordbox libraries.
+- **Playlist mode**: `PLAYLIST_MODE=all` monitors all playlists; `PLAYLIST_MODE=custom` + `MONITORED_PLAYLISTS` for specific playlists.
+- **Library backups**: `BACKUP_ENABLED=1` with `BACKUP_SERATO=1` and/or `BACKUP_REKORDBOX=1`. Zips metadata only to `~/Music/LibraryBackups`.
 - **Download verification**: Each download is verified via `fingerprint.py` using chromaprint + AcoustID (if available). Low-confidence matches are skipped and the next candidate is tried. The `state.json` tracks `verified`, `verification_method`, and `verification_confidence` per download.
 - **fpcalc/chromaprint**: Optional but recommended. Install via `brew install chromaprint`. Without it, only metadata-based verification is used.
 - **AcoustID**: Optional API key at https://acoustid.org/api-key. Enables ISRC-based definitive matching. Set `ACOUSTID_API_KEY` in `.env`.
