@@ -9,7 +9,6 @@ other operational data, a migration step must be added here.
 
 import json
 import logging
-import os
 import shutil
 import subprocess
 import sys
@@ -17,10 +16,11 @@ from pathlib import Path
 
 from .config import CONFIG_DIR, STATE_FILE
 from .setup import kill_running_daemon, register_launchdaemon, INSTALLED_PLIST, ENV_FILE
+from .daemon import request_stop
 
 logger = logging.getLogger(__name__)
 
-CURRENT_STATE_VERSION = 2  # Increment when state.json schema changes
+CURRENT_STATE_VERSION = 3  # Increment when state.json schema changes
 
 
 def _get_installed_version() -> str:
@@ -47,18 +47,22 @@ def _migrate_state(state: dict) -> dict:
 
     v1 (pre-0.20.0): No version field, downloaded entries lack label_name.
     v2 (0.20.0+): Has version field, downloaded entries may have label_name.
+    v3 (0.24.0+): Adds serato_blocked_transfer flag.
     """
     version = state.get("version", 1)
 
     if version < 2:
-        # v1 -> v2: Add label_name field awareness (no data change needed,
-        # just ensure structure is compatible)
+        # v1 -> v2: Add label_name field awareness
         for url, playlist in state.get("playlists", {}).items():
-            # Ensure downloaded entries have all expected fields
             for tid, info in playlist.get("downloaded", {}).items():
                 info.setdefault("local_path", "")
                 info.setdefault("downloaded_at", "")
         logger.info("Migrated state from v1 to v2")
+
+    if version < 3:
+        # v2 -> v3: Add serato_blocked_transfer flag
+        state.setdefault("serato_blocked_transfer", False)
+        logger.info("Migrated state from v2 to v3")
 
     state["version"] = CURRENT_STATE_VERSION
     return state
@@ -83,7 +87,7 @@ def run_update(check_only: bool = False) -> None:
     1. Check for latest version on PyPI
     2. If check_only, just report and return
     3. Back up config and state
-    4. Stop daemon
+    4. Stop daemon gracefully
     5. Upgrade the package
     6. Migrate data if needed
     7. Restart daemon
@@ -116,10 +120,15 @@ def run_update(check_only: bool = False) -> None:
     backup_dir = _backup_config()
     print(f"  ✓ Config backed up to {backup_dir}")
 
-    # Step 2: Stop daemon
+    # Step 2: Stop daemon gracefully
     print("  [2/6] Stopping daemon...")
-    kill_running_daemon()
-    print("  ✓ Daemon stopped")
+    stopped = request_stop(timeout=60)
+    if stopped:
+        print("  ✓ Daemon stopped gracefully")
+    else:
+        print("  ⚠ Daemon did not respond to graceful stop, force-killing...")
+        kill_running_daemon()
+        print("  ✓ Daemon force-stopped")
 
     # Step 3: Unload LaunchAgent
     print("  [3/6] Unloading LaunchAgent...")
@@ -131,13 +140,11 @@ def run_update(check_only: bool = False) -> None:
     # Step 4: Upgrade package
     print("  [4/6] Upgrading package...")
     try:
-        # Prefer uv (faster), fall back to pip
         result = subprocess.run(
             ["uv", "tool", "install", "streamflacr", "--force", "--reinstall"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
-            # Try pip as fallback
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--upgrade", "streamflacr"],
                 capture_output=True, text=True, timeout=120,
@@ -145,7 +152,6 @@ def run_update(check_only: bool = False) -> None:
         if result.returncode != 0:
             print(f"  ✗ Upgrade failed:\n{result.stderr or result.stdout}")
             print("  Restoring from backup...")
-            # Restore backup
             for f in (ENV_FILE, STATE_FILE):
                 backup = backup_dir / f.name
                 if backup.exists():
@@ -170,7 +176,6 @@ def run_update(check_only: bool = False) -> None:
             print("  ✓ State migrated")
         except Exception as e:
             logger.warning("State migration failed: %s", e)
-            # Restore from backup if migration failed
             backup_state = backup_dir / "state.json"
             if backup_state.exists():
                 shutil.copy2(backup_state, STATE_FILE)
@@ -184,7 +189,6 @@ def run_update(check_only: bool = False) -> None:
     else:
         print("  No LaunchAgent found. Run 'streamflacr setup' to register one.")
 
-    # Verify new version
     new_version = _get_installed_version()
     print()
     print(f"  ───────────────────────────────────────────")

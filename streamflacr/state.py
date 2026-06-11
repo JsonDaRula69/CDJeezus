@@ -8,12 +8,16 @@ from .config import STATE_FILE
 
 logger = logging.getLogger(__name__)
 
+# Current state schema version — bump when structure changes
+STATE_VERSION = 3
+
 
 class StateManager:
     """Tracks which tracks have been seen and downloaded.
 
-    State schema:
+    State schema (v3):
     {
+        "version": 3,
         "playlists": {
             "<playlist_url>": {
                 "name": "<playlist_name>",
@@ -27,25 +31,46 @@ class StateManager:
                     }
                 }
             }
-        }
+        },
+        "serato_blocked_transfer": false
     }
     """
 
     def __init__(self, state_file: Path | None = None):
         self.state_file = state_file or STATE_FILE
-        self._state: dict = {"playlists": {}}
+        self._state: dict = {"version": STATE_VERSION, "playlists": {}, "serato_blocked_transfer": False}
         self.load()
 
     def load(self) -> None:
         if self.state_file.exists():
             try:
-                self._state = json.loads(self.state_file.read_text())
+                data = json.loads(self.state_file.read_text())
+                # Migrate older state formats
+                version = data.get("version", 1)
+                if version < STATE_VERSION:
+                    data = self._migrate(data, version)
+                self._state = data
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("Could not load state file: %s", e)
-                self._state = {"playlists": {}}
+                self._state = {"version": STATE_VERSION, "playlists": {}, "serato_blocked_transfer": False}
 
     def save(self) -> None:
+        self._state["version"] = STATE_VERSION
         self.state_file.write_text(json.dumps(self._state, indent=2))
+
+    def _migrate(self, data: dict, from_version: int) -> dict:
+        """Migrate state from an older schema version."""
+        if from_version < 2:
+            # v1 -> v2: Ensure downloaded entries have all expected fields
+            for url, playlist in data.get("playlists", {}).items():
+                for tid, info in playlist.get("downloaded", {}).items():
+                    info.setdefault("local_path", "")
+                    info.setdefault("downloaded_at", "")
+        if from_version < 3:
+            # v2 -> v3: Add serato_blocked_transfer flag
+            data.setdefault("serato_blocked_transfer", False)
+        data["version"] = STATE_VERSION
+        return data
 
     def get_seen_ids(self, playlist_url: str) -> set[str]:
         playlist = self._state["playlists"].get(playlist_url, {})
@@ -74,3 +99,13 @@ class StateManager:
         if playlist_url not in self._state["playlists"]:
             self._state["playlists"][playlist_url] = {"seen_track_ids": [], "downloaded": {}}
         self._state["playlists"][playlist_url]["name"] = name
+
+    @property
+    def serato_blocked(self) -> bool:
+        """Whether files are pending in staging because Serato is running."""
+        return self._state.get("serato_blocked_transfer", False)
+
+    @serato_blocked.setter
+    def serato_blocked(self, value: bool) -> None:
+        self._state["serato_blocked_transfer"] = value
+        self.save()

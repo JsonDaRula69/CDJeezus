@@ -35,6 +35,11 @@ SERATO_DIR: Path = Path(os.environ.get("SERATO_DIR", str(Path.home() / "Music" /
 # State file (tracks last-seen set to avoid re-downloading)
 STATE_FILE: Path = Path(os.environ.get("STATE_FILE", str(CONFIG_DIR / "state.json")))
 
+# Daemon lifecycle files
+PID_FILE: Path = Path(os.environ.get("STREAMFLACR_PID_FILE", str(CONFIG_DIR / "streamflacr.pid")))
+STOP_FILE: Path = Path(os.environ.get("STREAMFLACR_STOP_FILE", str(CONFIG_DIR / "stop-requested")))
+LOG_FILE: Path = Path(os.environ.get("STREAMFLACR_LOG_FILE", str(CONFIG_DIR / "streamflacr.log")))
+
 # Search preferences
 SEARCH_TIMEOUT: int = int(os.environ.get("SEARCH_TIMEOUT", "30"))
 PREFER_FREE_SLOTS: bool = os.environ.get("PREFER_FREE_SLOTS", "1") == "1"
