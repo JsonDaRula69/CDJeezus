@@ -154,32 +154,41 @@ def progress_bar(iterable=None, description: str = 'Working...', total: int | No
 
 # ── Interactive prompts (via questionary) ─────────────────────────────────
 
-def select(prompt: str, choices: list[str]) -> int:
+def select(prompt: str, choices: list[str], *, allow_back: bool = False) -> int:
     """Single-select menu (arrow keys + enter). Returns index of choice.
 
+    If allow_back is True, a "← Go back" option is appended. Selecting it returns -1.
     Falls back to numbered input on non-interactive terminals.
     """
+    effective = list(choices)
+    if allow_back:
+        effective.append(GO_BACK)
+
     if not sys.stdout.isatty():
         # Non-interactive fallback
         print(f"\n  {prompt}")
-        for i, choice in enumerate(choices):
+        for i, choice in enumerate(effective):
             print(f"    {i+1}. {choice}")
         while True:
             try:
-                ans = int(input(f"  Enter number [1-{len(choices)}]: ")) - 1
-                if 0 <= ans < len(choices):
+                ans = int(input(f"  Enter number [1-{len(effective)}]: ")) - 1
+                if 0 <= ans < len(effective):
+                    if allow_back and ans == len(effective) - 1:
+                        return -1
                     return ans
             except (ValueError, EOFError):
                 pass
 
     result = questionary.select(
         f'  {prompt}',
-        choices=choices,
+        choices=effective,
         style=QUESTIONARY_STYLE,
     ).ask()
 
     if result is None:
         return 0  # Default to first on escape
+    if result == GO_BACK:
+        return -1
     return choices.index(result)
 
 

@@ -140,8 +140,6 @@ def main() -> None:
 
     if not is_configured():
         console.print()
-        banner(__version__)
-        console.print()
         from .style import play_intro_rant
         play_intro_rant()
         separator()
