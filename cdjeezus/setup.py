@@ -2,10 +2,6 @@
 
 Because paying $2000 for a deck without Stems is a lifestyle choice,
 and we're here to make it slightly less painful.
-
-Detects DJ software, SoundCloud login, and Soulseek installation,
-configures playlist monitoring and library backups, writes .env,
-and registers the launchd daemon.
 """
 
 import logging
@@ -20,16 +16,10 @@ from .config import (
     STAGING_DIR, BACKUP_DIR, PID_FILE, STOP_FILE, LOG_FILE,
 )
 from .style import (
-    c, dim, bold, italic, success, warning, error, info, accent,
-    header, separator, box, box_bottom, box_mid, box_line, kv_line,
-    step_header, format_kv_box, countdown,
-    MENU_CURSOR, MULTI_SELECT_ON, MULTI_SELECT_OFF,
-    MENU_CURSOR_STYLE, MENU_HIGHLIGHT_STYLE,
-    MULTI_SELECT_CURSOR_STYLE, MULTI_SELECT_BRACKETS_STYLE,
-    SEARCH_HIGHLIGHT_STYLE, STATUS_BAR_STYLE,
-    MULTI_SELECT_HINT, SEARCH_HINT,
-    CYAN, BRIGHT_CYAN, BRIGHT_AMBER, BRIGHT_RED, BRIGHT_GREEN,
-    DIM_WHITE, RST,
+    banner, step, ok, warn, fail, dim, info, accent, separator,
+    boxed, summary_box, disclaimer_box,
+    select, multiselect, confirm, password, text_input, press_enter,
+    console,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,9 +27,10 @@ logger = logging.getLogger(__name__)
 ENV_FILE = CONFIG_DIR / ".env"
 INSTALLED_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.cdjeezus.plist"
 LEGACY_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.cdjeezus.plist"
-# Old StreamFLACr plists from before the rename
 STREAMFLACR_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.streamflacr.plist"
 STREAMFLACR_LEGACY_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.streamflacr.plist"
+
+_OLD_STREAMFLACR_CONFIG = Path.home() / ".config" / "streamflacr"
 
 
 def kill_running_daemon() -> bool:
@@ -75,7 +66,7 @@ def kill_running_daemon() -> bool:
     return killed
 
 
-# ── DJ Software Detection ────────────────────────────────────────────
+# ── Detection ────────────────────────────────────────────────────────
 
 def detect_serato() -> bool:
     return SERATO_DIR.exists()
@@ -105,8 +96,6 @@ def detect_soulseek_data() -> bool:
     return data_dir.exists() and any(data_dir.iterdir())
 
 
-# ── SoundCloud Detection ──────────────────────────────────────────────
-
 def detect_soundcloud_login() -> bool:
     from .soundcloud import has_oauth
     return has_oauth()
@@ -124,78 +113,13 @@ def extract_soundcloud_user_url() -> str | None:
 
 
 def prompt_soundcloud_login() -> None:
-    print()
-    print(warning("SoundCloud login not detected in Chrome."))
-    print(info("  Opening SoundCloud login page in your browser..."))
+    warn("SoundCloud login not detected in Chrome.")
+    dim("Opening SoundCloud login page in your browser...")
     subprocess.run(["open", "https://soundcloud.com/signin"], check=False)
-    input(dim("  Press Enter once you've logged into SoundCloud in Chrome... "))
+    press_enter("Press Enter once you've logged into SoundCloud in Chrome...")
 
 
-# ── TUI Helpers ───────────────────────────────────────────────────────
-
-def _menu_select(options: list[str], title: str = "", status_bar: str | None = None) -> int:
-    """Single-select menu using arrow keys and Enter. CDJeezus-themed."""
-    from simple_term_menu import TerminalMenu
-    kwargs = dict(
-        menu_entries=options,
-        title=title,
-        menu_cursor=MENU_CURSOR,
-        menu_cursor_style=MENU_CURSOR_STYLE,
-        menu_highlight_style=MENU_HIGHLIGHT_STYLE,
-        search_highlight_style=SEARCH_HIGHLIGHT_STYLE,
-        status_bar_style=STATUS_BAR_STYLE,
-        show_search_hint=True,
-        show_search_hint_text=SEARCH_HINT,
-    )
-    if status_bar:
-        kwargs["status_bar"] = status_bar
-    menu = TerminalMenu(**kwargs)
-    return menu.show()
-
-
-def _multi_select(options: list[str], title: str = "", status_bar: str | None = None) -> list[int]:
-    """Multi-select menu using arrow keys, spacebar, and Enter. CDJeezus-themed."""
-    from simple_term_menu import TerminalMenu
-    kwargs = dict(
-        menu_entries=options,
-        title=title,
-        multi_select=True,
-        multi_select_cursor=f"{MULTI_SELECT_ON} ",
-        multi_select_cursor_brackets_style=MULTI_SELECT_BRACKETS_STYLE,
-        multi_select_cursor_style=MULTI_SELECT_CURSOR_STYLE,
-        menu_cursor=MENU_CURSOR,
-        menu_cursor_style=MENU_CURSOR_STYLE,
-        menu_highlight_style=MENU_HIGHLIGHT_STYLE,
-        search_highlight_style=SEARCH_HIGHLIGHT_STYLE,
-        status_bar_style=STATUS_BAR_STYLE,
-        show_multi_select_hint=True,
-        show_multi_select_hint_text=MULTI_SELECT_HINT,
-        show_search_hint=True,
-        show_search_hint_text=SEARCH_HINT,
-    )
-    if status_bar:
-        kwargs["status_bar"] = status_bar
-    menu = TerminalMenu(**kwargs)
-    result = menu.show()
-    if result is None:
-        return []
-    return result if isinstance(result, list) else [result]
-
-
-# ── Soulseek Prompt ─────────────────────────────────────────────────
-
-def prompt_soulseek_setup() -> dict[str, str]:
-    """Prompt for Soulseek credentials. You need an account. Yes, really."""
-    print()
-    print(info("  Soulseek credentials required. Yes, you need an account."))
-    print(info("  If you don't have one, visit https://www.slsknet.org"))
-    print()
-    username = input(f"  {c(BRIGHT_CYAN, 'Soulseek username')}: ").strip()
-    password = input(f"  {c(BRIGHT_CYAN, 'Soulseek password')}: ").strip()
-    return {"username": username, "password": password}
-
-
-# ── LaunchAgent Management ───────────────────────────────────────────
+# ── LaunchAgent / Env ─────────────────────────────────────────────────
 
 def register_launchdaemon() -> None:
     """Register the CDJeezus LaunchAgent for auto-start on login."""
@@ -227,17 +151,15 @@ def register_launchdaemon() -> None:
     subprocess.run(["launchctl", "load", str(INSTALLED_PLIST)], capture_output=True, check=False)
 
 
-# ── Env File Writer ───────────────────────────────────────────────────
-
 def write_env_file(config: dict) -> None:
-    """Write the .env config file from the setup wizard results."""
+    """Write the .env config file."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     primary = config.get("primary_dj", "serato")
     download_dir = str(DOWNLOAD_DIR) if primary == "serato" else str(
         Path.home() / "Music" / "rekordbox_auto_import"
     )
     env_content = f"""# CDJeezus configuration — generated by setup wizard
-# Edit at your own risk. Or don't. I'm a config file, not a cop.
+# Edit at your own risk. I'm a config file, not a cop.
 
 SLSK_USERNAME={config.get("slsk_username", "")}
 SLSK_PASSWORD={config.get("slsk_password", "")}
@@ -267,24 +189,20 @@ def full_uninstall() -> None:
     """Remove all CDJeezus artifacts. Music files, libraries, and backups stay."""
     from . import __version__
 
-    print()
-    print(box(f" CDJeezus v{__version__} — Uninstall ", width=54))
-    print(box_line("Time to cleanse the temple.", width=54))
-    print(box_bottom(width=54))
-    print()
+    console.print()
+    boxed(f'CDJeezus v{__version__} — Uninstall', 'Time to cleanse the temple.')
+    console.print()
 
-    # Stop daemon
     from .daemon import request_stop, is_running
     if is_running():
-        print(info("  Stopping daemon..."))
+        dim("Stopping daemon...")
         stopped = request_stop(timeout=60)
         if stopped:
-            print(success("Daemon stopped gracefully"))
+            ok("Daemon stopped gracefully")
         else:
             kill_running_daemon()
-            print(success("Daemon force-stopped"))
+            ok("Daemon force-stopped")
 
-    # Remove LaunchAgent plists
     removed_plist = False
     for plist in (INSTALLED_PLIST, LEGACY_PLIST, STREAMFLACR_PLIST, STREAMFLACR_LEGACY_PLIST):
         if plist.exists():
@@ -292,34 +210,26 @@ def full_uninstall() -> None:
             plist.unlink()
             removed_plist = True
     if removed_plist:
-        print(success("LaunchAgent removed"))
+        ok("LaunchAgent removed")
     else:
-        print(info("  No LaunchAgent found"))
+        dim("No LaunchAgent found")
 
-    # Remove legacy plist
-    if LEGACY_PLIST.exists():
-        subprocess.run(["launchctl", "unload", str(LEGACY_PLIST)], capture_output=True, check=False)
-        LEGACY_PLIST.unlink()
-        print(success("Legacy LaunchAgent removed"))
-
-    # Remove config and staging
     if CONFIG_DIR.exists():
         shutil.rmtree(CONFIG_DIR, ignore_errors=True)
-        print(success("Config and staging removed"))
+        ok("Config and staging removed")
     else:
-        print(info("  No config directory found"))
+        dim("No config directory found")
 
-    # Remove PID/log files if they exist outside config_dir
     for f in (PID_FILE, LOG_FILE):
         if f.exists() and not str(f).startswith(str(CONFIG_DIR)):
             f.unlink(missing_ok=True)
 
-    print()
-    print(separator(width=54))
-    print(info("  Music files, DJ libraries, and backups were NOT modified."))
-    print(info("  As it should be. We're not monsters."))
-    print(separator(width=54))
-    print()
+    console.print()
+    separator()
+    dim("Music files, DJ libraries, and backups were NOT modified.")
+    dim("As it should be. We're not monsters.")
+    separator()
+    console.print()
 
 
 # ── Setup Wizard ──────────────────────────────────────────────────────
@@ -330,127 +240,110 @@ def run_setup(*, non_interactive: bool = False) -> None:
 
     config: dict = {}
 
-    print()
-    print(box(" CDJeezus Setup Wizard ", width=54))
-    print(box_line(f"v{__version__} — 8 steps to DJ salvation", width=54))
-    print(box_bottom(width=54))
-    print()
+    console.print()
+    boxed('CDJeezus Setup Wizard', f'v{__version__} — 8 steps to DJ salvation')
+    console.print()
 
     # Migrate from StreamFLACr if needed
     if _OLD_STREAMFLACR_CONFIG.exists() and not CONFIG_DIR.exists():
-        print(info("  Migrating config from StreamFLACr to CDJeezus..."))
+        dim("Migrating config from StreamFLACr to CDJeezus...")
         try:
             _OLD_STREAMFLACR_CONFIG.rename(CONFIG_DIR)
-            print(success("Migrated config from StreamFLACr to CDJeezus"))
+            ok("Migrated config from StreamFLACr to CDJeezus")
         except Exception as e:
             logger.warning("Could not auto-migrate: %s", e)
-        print()
+        console.print()
 
     # ── Step 1: Primary DJ ──
     serato_found = detect_serato()
     rekordbox_found = detect_rekordbox()
-    print(step_header(1, 8, "Choosing your religion..."))
+    step(1, 8, 'Choosing your religion...')
 
     if serato_found and rekordbox_found:
-        print(info("  Both detected. Pick your primary (the one you actually mix on):"))
+        dim("Both detected. Pick your primary (the one you actually mix on):")
         if not non_interactive:
-            choice = _menu_select(
-                ["Serato DJ", "Rekordbox"],
-                title="  Which one do you suffer with most?",
-                status_bar="arrow keys + enter — no judgment",
-            )
+            choice = select("Which one do you suffer with most?", ["Serato DJ", "Rekordbox"])
             config["primary_dj"] = "serato" if choice == 0 else "rekordbox"
         else:
             config["primary_dj"] = "serato"
     elif serato_found:
-        print(success("Serato DJ auto-detected"))
+        ok("Serato DJ auto-detected")
         config["primary_dj"] = "serato"
     elif rekordbox_found:
-        print(success("Rekordbox auto-detected"))
+        ok("Rekordbox auto-detected")
         config["primary_dj"] = "rekordbox"
     else:
-        print(warning("No DJ software detected"))
-        print(info("  CDJs and laptops don't count. Install Serato or Rekordbox first."))
+        warn("No DJ software detected")
+        dim("CDJs and laptops don't count. Install Serato or Rekordbox first.")
         if not non_interactive:
-            choice = _menu_select(
-                ["Serato DJ", "Rekordbox"],
-                title="  Which are you installing?",
-            )
+            choice = select("Which are you installing?", ["Serato DJ", "Rekordbox"])
             config["primary_dj"] = "serato" if choice == 0 else "rekordbox"
         else:
             config["primary_dj"] = "serato"
-    print()
+    console.print()
 
     # ── Step 2: Secondary DJ / 2-way sync ──
-    print(step_header(2, 8, "Checking for the other cult..."))
+    step(2, 8, 'Checking for the other cult...')
     secondary = "rekordbox" if config["primary_dj"] == "serato" else "serato"
     secondary_found = detect_rekordbox() if config["primary_dj"] == "serato" else detect_serato()
 
     if secondary_found:
-        print(success(f"{secondary.title()} detected!"))
+        ok(f"{secondary.title()} detected!")
         if not non_interactive:
-            answer = input(
-                f"  {c(BRIGHT_CYAN, f'Enable 2-way sync with {secondary.title()}?')} [y/N]: "
-            ).strip().lower()
-            config["two_way_sync"] = answer in ("y", "yes")
+            config["two_way_sync"] = confirm(f"Enable 2-way sync with {secondary.title()}?", default=False)
         else:
             config["two_way_sync"] = False
 
         if config["two_way_sync"]:
-            print(success(f"2-way sync with {secondary.title()} enabled"))
+            ok(f"2-way sync with {secondary.title()} enabled")
         else:
-            print(info("  2-way sync disabled. More crates, more problems."))
+            dim("2-way sync disabled. More crates, more problems.")
     else:
-        print(warning(f"{secondary.title()} not detected!"))
-        print(info("  Library sync disabled. Different club, same cult."))
-        print(info("  Press Enter to keep going."))
+        warn(f"{secondary.title()} not detected!")
+        dim("Library sync disabled. Different club, same cult.")
         config["two_way_sync"] = False
         if not non_interactive:
-            input()
-    print()
+            press_enter()
+    console.print()
 
     # ── Step 3: Soulseek ──
-    print(step_header(3, 8, "Soulseek setup..."))
+    step(3, 8, 'Soulseek setup...')
     if detect_soulseek_installation():
-        print(success("SoulseekQt.app found"))
+        ok("SoulseekQt.app found")
     else:
-        print(warning("SoulseekQt.app not found"))
-        print(info("  It's recommended but not required. The built-in client works too."))
-        if not non_interactive:
-            answer = input("  Install SoulseekQt? [y/N]: ").strip().lower()
-            if answer == "y":
-                print(info("  Downloading from slsknet.org..."))
-                try:
-                    subprocess.run(
-                        ["open", "https://www.slsknet.org/download"],
-                        check=False,
-                    )
-                except Exception:
-                    pass
-                input("  Press Enter once you've installed it... ")
+        warn("SoulseekQt.app not found")
+        dim("It's recommended but not required. The built-in client works too.")
+        if not non_interactive and confirm("Install SoulseekQt?", default=False):
+            dim("Downloading from slsknet.org...")
+            try:
+                subprocess.run(["open", "https://www.slsknet.org/download"], check=False)
+            except Exception:
+                pass
+            press_enter("Press Enter once you've installed it...")
 
     if detect_soulseek_data():
-        print(success("SoulseekQt data found (you've logged in before)"))
+        ok("SoulseekQt data found (you've logged in before)")
     else:
-        print(info("  No Soulseek data found"))
+        dim("No Soulseek data found")
 
-    slsk_creds = prompt_soulseek_setup()
-    config["slsk_username"] = slsk_creds["username"]
-    config["slsk_password"] = slsk_creds["password"]
-    print()
+    console.print()
+    dim("Soulseek credentials required. Yes, you need an account.")
+    dim("If you don't have one, visit https://www.slsknet.org")
+    console.print()
+    config["slsk_username"] = text_input("Soulseek username")
+    config["slsk_password"] = password("Soulseek password")
+    console.print()
 
     # ── Step 4: AcoustID ──
-    print(step_header(4, 8, "Audio fingerprinting..."))
+    step(4, 8, 'Audio fingerprinting...')
     fpcalc_available = detect_fpcalc()
     if fpcalc_available:
-        print(success("fpcalc (chromaprint) found — audio fingerprinting enabled"))
+        ok("fpcalc (chromaprint) found — audio fingerprinting enabled")
     else:
-        print(warning("fpcalc not found"))
-        print(info("  Run `brew install chromaprint` unless you enjoy guessing"))
+        warn("fpcalc not found")
+        dim("Run `brew install chromaprint` unless you enjoy guessing")
     if not non_interactive:
-        acoustid_key = input(
-            f"  {c(BRIGHT_CYAN, 'AcoustID API key')} {dim('(press Enter to skip)')}: "
-        ).strip()
+        acoustid_key = text_input("AcoustID API key (press Enter to skip)")
         if acoustid_key:
             config["acoustid_api_key"] = acoustid_key
             config["fingerprint_verify"] = True
@@ -460,22 +353,20 @@ def run_setup(*, non_interactive: bool = False) -> None:
     else:
         config["acoustid_api_key"] = ""
         config["fingerprint_verify"] = fpcalc_available
-    print()
+    console.print()
 
     # ── Step 5: SoundCloud ──
-    print(step_header(5, 8, "SoundCloud connection..."))
+    step(5, 8, 'SoundCloud connection...')
     if detect_soundcloud_login():
         user_url = extract_soundcloud_user_url()
         if user_url:
-            print(success(f"SoundCloud login detected in Chrome"))
-            print(info(f"  Profile: {user_url}"))
+            ok("SoundCloud login detected in Chrome")
+            dim(f"Profile: {user_url}")
             config["user_url"] = user_url
         else:
-            print(warning("Could not extract SoundCloud profile from Chrome"))
+            warn("Could not extract SoundCloud profile from Chrome")
             if not non_interactive:
-                config["user_url"] = input(
-                    f"  {c(BRIGHT_CYAN, 'SoundCloud profile URL')}: "
-                ).strip()
+                config["user_url"] = text_input("SoundCloud profile URL")
             else:
                 config["user_url"] = ""
     else:
@@ -483,56 +374,44 @@ def run_setup(*, non_interactive: bool = False) -> None:
             prompt_soundcloud_login()
             user_url = extract_soundcloud_user_url()
             if not user_url:
-                user_url = input(
-                    f"  {c(BRIGHT_CYAN, 'SoundCloud profile URL')}: "
-                ).strip()
+                user_url = text_input("SoundCloud profile URL")
             config["user_url"] = user_url
         else:
             config["user_url"] = ""
-    print()
+    console.print()
 
     # ── Step 6: Playlists ──
-    print(step_header(6, 8, "Playlist selection..."))
+    step(6, 8, 'Playlist selection...')
     if not non_interactive:
-        choice = _menu_select(
-            ["All playlists", "Custom selection"],
-            title="  All playlists or just the ones you actually use?",
-            status_bar="the more you select, the longer this takes",
-        )
+        choice = select("All playlists or just the ones you actually use?",
+                        ["All playlists", "Custom selection"])
         if choice == 0:
             config["playlist_mode"] = "all"
             config["monitored_playlists"] = []
-            print(success("All playlists will be monitored"))
+            ok("All playlists will be monitored")
         else:
             from .soundcloud import discover_user_playlists
             playlists = discover_user_playlists()
             if playlists:
                 playlist_names = [p.title for p in playlists]
-                selected = _multi_select(
-                    playlist_names,
-                    title="  Select playlists to monitor:",
-                    status_bar="space to toggle, enter to confirm",
-                )
+                selected = multiselect("Select playlists to monitor:", playlist_names)
                 config["playlist_mode"] = "custom"
                 config["monitored_playlists"] = [playlists[i].url for i in selected]
-                print(success(f"{len(selected)} playlist(s) selected"))
+                ok(f"{len(selected)} playlist(s) selected")
             else:
-                print(warning("No playlists found"))
+                warn("No playlists found")
                 config["playlist_mode"] = "all"
                 config["monitored_playlists"] = []
     else:
         config["playlist_mode"] = "all"
         config["monitored_playlists"] = []
-        print(info("  Monitoring all playlists (non-interactive mode)"))
-    print()
+        dim("Monitoring all playlists (non-interactive mode)")
+    console.print()
 
     # ── Step 7: Backups ──
-    print(step_header(7, 8, "Library backups..."))
+    step(7, 8, 'Library backups...')
     if not non_interactive:
-        answer = input(
-            f"  {c(BRIGHT_CYAN, 'Enable library backups?')} [y/N]: "
-        ).strip().lower()
-        config["backup_enabled"] = answer in ("y", "yes")
+        config["backup_enabled"] = confirm("Enable library backups?", default=False)
     else:
         config["backup_enabled"] = False
 
@@ -544,114 +423,81 @@ def run_setup(*, non_interactive: bool = False) -> None:
             backup_options.append("Rekordbox")
 
         if backup_options and not non_interactive:
-            selected = _multi_select(
-                backup_options,
-                title="  Which libraries to back up?",
-                status_bar="your crates are precious. back them up.",
-            )
+            selected = multiselect("Which libraries to back up?", backup_options)
             config["backup_serato"] = "Serato" in [backup_options[i] for i in selected]
             config["backup_rekordbox"] = "Rekordbox" in [backup_options[i] for i in selected]
         else:
             config["backup_serato"] = detect_serato()
             config["backup_rekordbox"] = detect_rekordbox()
 
-        print(success(f"Backups enabled"))
+        ok("Backups enabled")
     else:
         config["backup_serato"] = False
         config["backup_rekordbox"] = False
         config["backup_dir"] = str(BACKUP_DIR)
-        print(info("  Backups disabled. Live dangerously, I guess."))
-    print()
+        dim("Backups disabled. Live dangerously, I guess.")
+    console.print()
 
     # ── Step 8: Config Summary & Confirm ──
     while True:
-        print(step_header(8, 8, "Here's what you're signing up for:"))
-        print()
+        step(8, 8, "Here's what you're signing up for:")
+        console.print()
 
-        summary_pairs = [
-            ("Primary DJ", config.get("primary_dj", "serato").title()),
-            ("2-way sync", "Yes" if config.get("two_way_sync") else "No"),
-            ("Soulseek", config.get("slsk_username", "")),
-            ("AcoustID", "Yes" if config.get("acoustid_api_key") else "No"),
-            ("SoundCloud", config.get("user_url", "")),
-            ("Playlists", config.get("playlist_mode", "all").title()),
-            ("Backups", "Yes" if config.get("backup_enabled") else "No"),
-        ]
-        print(format_kv_box(" Config Summary ", summary_pairs, width=54))
-        print()
+        summary_box('Config Summary', [
+            ('Primary DJ', config.get('primary_dj', 'serato').title()),
+            ('2-way sync', 'Yes' if config.get('two_way_sync') else 'No'),
+            ('Soulseek', config.get('slsk_username', '')),
+            ('AcoustID', 'Yes' if config.get('acoustid_api_key') else 'No'),
+            ('SoundCloud', config.get('user_url', '')),
+            ('Playlists', config.get('playlist_mode', 'all').title()),
+            ('Backups', 'Yes' if config.get('backup_enabled') else 'No'),
+        ])
+        console.print()
 
         if not non_interactive:
-            answer = input(
-                f"  {c(BRIGHT_AMBER, 'Look good?')} [Y/n]: "
-            ).strip().lower()
-            if answer in ("", "y", "yes"):
-                break
-
-            edit_options = [
-                "Primary DJ",
-                "2-way sync",
-                "Soulseek",
-                "SoundCloud",
-                "Playlist selection",
-                "Library backups",
-                "Never mind, let's just go",
-            ]
-            choice = _menu_select(
-                edit_options,
-                title="  Which config to edit?",
-                status_bar="we all make mistakes. fix yours here.",
-            )
-            if choice == 6:
-                break
-            _edit_config_step(choice, config)
-            # Re-render summary
-            print()
-        else:
-            break
+            if not confirm("Look good?", default=True):
+                edit_options = [
+                    "Primary DJ", "2-way sync", "Soulseek", "SoundCloud",
+                    "Playlist selection", "Library backups", "Never mind, let's just go",
+                ]
+                choice = select("Which config to edit?", edit_options)
+                if choice == 6:
+                    break
+                _edit_config_step(choice, config)
+                console.print()
+                continue
+        break
 
     # ── Disclaimer ──
-    print()
-    print(box(" Legal Disclaimer (yeah, I know) ", width=54))
-    print(box_line("Alright, real talk: you're only supposed to", width=54))
-    print(box_line("use this for music you have rights to, on a", width=54))
-    print(box_line("private SoulSeek server that also belongs to", width=54))
-    print(box_line("you. This is for backup and syncing only.", width=54))
-    print(box_mid(width=54))
-    print(box_line("Also SoundCloud might get pissy if you don't", width=54))
-    print(box_line("have Artist Pro, so use at your own risk.", width=54))
-    print(box_line("I worked around it but idk ask Naveen to", width=54))
-    print(box_line("do better.", width=54))
-    print(box_bottom(width=54))
-    print()
+    console.print()
+    disclaimer_box(
+        "Alright, real talk: you're only supposed to use this for music "
+        "you have rights to, on a private SoulSeek server that also belongs to you. "
+        "This is for backup and syncing only.\n\n"
+        "Also SoundCloud might get pissy if you don't have Artist Pro, so use at your own risk. "
+        "I worked around it but [italic]idk ask Naveen to do better.[/italic]"
+    )
+    console.print()
 
     if not non_interactive:
-        disclaimer_choice = _menu_select(
-            ["Agreed", "Wait, what?"],
-            title="  Last chance to back out:",
-            status_bar="no really, read it",
-        )
+        disclaimer_choice = select("Last chance to back out:", ["Agreed", "Wait, what?"])
         if disclaimer_choice == 1:
-            print()
-            print(box("", width=54))
-            print(box_line("lol. fuck off. Closing this window will", width=54))
-            print(box_line("uninstall automatically. Or press Enter to", width=54))
-            print(box_line("stay and accept your fate.", width=54))
-            print(box_bottom(width=54))
-            input()
-    print()
+            console.print()
+            boxed('', "lol. fuck off. Closing this window will uninstall automatically.\nOr press Enter to stay and accept your fate.")
+            press_enter()
+    console.print()
 
     # ── Write config ──
     write_env_file(config)
-    print(info(f"  Config written to {ENV_FILE}"))
+    dim(f"Config written to {ENV_FILE}")
 
     primary = config.get("primary_dj", "serato")
     download_dir = str(DOWNLOAD_DIR) if primary == "serato" else str(
         Path.home() / "Music" / "rekordbox_auto_import"
     )
-    print(success(f"Download directory: {download_dir}"))
-    print(success(f"Staging directory: {STAGING_DIR}"))
+    ok(f"Download directory: {download_dir}")
+    ok(f"Staging directory: {STAGING_DIR}")
 
-    # Run initial backup if enabled
     if config.get("backup_enabled"):
         from .backup import run_backups
         results = run_backups(
@@ -659,87 +505,63 @@ def run_setup(*, non_interactive: bool = False) -> None:
             backup_rekordbox=config.get("backup_rekordbox", False),
         )
         if results:
-            print(success(f"Initial backup created ({len(results)} archive(s))"))
+            ok(f"Initial backup created ({len(results)} archive(s))")
 
-    # Register daemon
     if not non_interactive:
-        answer = input(
-            f"  {c(BRIGHT_CYAN, 'Start CDJeezus automatically on login?')} [Y/n]: "
-        ).strip().lower()
-        if answer in ("", "y", "yes"):
+        if confirm("Start CDJeezus automatically on login?", default=True):
             register_launchdaemon()
-            print(success("LaunchDaemon registered"))
+            ok("LaunchDaemon registered")
         else:
-            print(info("  Skipping daemon. Run `cdjeezus --daemon` to start manually."))
+            dim("Skipping daemon. Run `cdjeezus --daemon` to start manually.")
     else:
         register_launchdaemon()
 
-    print()
-    print(box(" Setup Complete! ", width=54))
-    print(box_line("Deploying the daemon in 3...", width=54))
-    print(box_bottom(width=54))
+    console.print()
+    boxed('Setup Complete!', 'Deploying the daemon in 3...')
 
     import time
     time.sleep(3)
-    print()
+    console.print()
 
 
 def _edit_config_step(step: int, config: dict) -> None:
     """Re-run a specific setup step to edit config."""
     if step == 0:  # Primary DJ
-        serato_found = detect_serato()
-        rekordbox_found = detect_rekordbox()
         options = []
-        if serato_found:
+        if detect_serato():
             options.append("Serato DJ (detected)")
         else:
             options.append("Serato DJ (not found)")
-        if rekordbox_found:
+        if detect_rekordbox():
             options.append("Rekordbox (detected)")
         else:
             options.append("Rekordbox (not found)")
-        choice = _menu_select(
-            options,
-            title="  Select your primary DJ software:",
-            status_bar="the one you actually mix on",
-        )
+        choice = select("Select your primary DJ software:", options)
         config["primary_dj"] = "serato" if choice == 0 else "rekordbox"
     elif step == 1:  # 2-way sync
         secondary = "rekordbox" if config["primary_dj"] == "serato" else "serato"
-        answer = input(
-            f"  {c(BRIGHT_CYAN, f'Enable 2-way sync with {secondary.title()}?')} [y/N]: "
-        ).strip().lower()
-        config["two_way_sync"] = answer in ("y", "yes")
+        config["two_way_sync"] = confirm(f"Enable 2-way sync with {secondary.title()}?", default=False)
     elif step == 2:  # Soulseek
-        slsk_creds = prompt_soulseek_setup()
-        config["slsk_username"] = slsk_creds["username"]
-        config["slsk_password"] = slsk_creds["password"]
+        dim("Soulseek credentials required. Yes, you need an account.")
+        config["slsk_username"] = text_input("Soulseek username")
+        config["slsk_password"] = password("Soulseek password")
     elif step == 3:  # AcoustID
-        fpcalc_available = detect_fpcalc()
-        if fpcalc_available:
-            print(success("fpcalc (chromaprint) is installed"))
+        if detect_fpcalc():
+            ok("fpcalc (chromaprint) is installed")
         else:
-            print(warning("fpcalc not found"))
-            print(info("  Run `brew install chromaprint` unless you enjoy guessing"))
-        acoustid_key = input(
-            f"  {c(BRIGHT_CYAN, 'AcoustID API key')} {dim('(press Enter to skip)')}: "
-        ).strip()
-        config["acoustid_api_key"] = acoustid_key
+            warn("fpcalc not found")
+            dim("Run `brew install chromaprint` unless you enjoy guessing")
+        config["acoustid_api_key"] = text_input("AcoustID API key (press Enter to skip)")
     elif step == 4:  # SoundCloud
         if not detect_soundcloud_login():
             prompt_soundcloud_login()
         user_url = extract_soundcloud_user_url()
         if not user_url:
-            user_url = input(
-                f"  {c(BRIGHT_CYAN, 'SoundCloud profile URL')}: "
-            ).strip()
+            user_url = text_input("SoundCloud profile URL")
         config["user_url"] = user_url
     elif step == 5:  # Playlists
-        choice = _menu_select(
-            ["All playlists", "Custom selection"],
-            title="  All playlists or just the ones you actually use?",
-            status_bar="the more you select, the longer this takes",
-        )
+        choice = select("All playlists or just the ones you actually use?",
+                        ["All playlists", "Custom selection"])
         if choice == 0:
             config["playlist_mode"] = "all"
             config["monitored_playlists"] = []
@@ -748,18 +570,11 @@ def _edit_config_step(step: int, config: dict) -> None:
             playlists = discover_user_playlists()
             if playlists:
                 playlist_names = [p.title for p in playlists]
-                selected = _multi_select(
-                    playlist_names,
-                    title="  Select playlists:",
-                    status_bar="space to toggle, enter to confirm",
-                )
+                selected = multiselect("Select playlists:", playlist_names)
                 config["playlist_mode"] = "custom"
                 config["monitored_playlists"] = [playlists[i].url for i in selected]
     elif step == 6:  # Backups
-        answer = input(
-            f"  {c(BRIGHT_CYAN, 'Enable library backups?')} [y/N]: "
-        ).strip().lower()
-        config["backup_enabled"] = answer in ("y", "yes")
+        config["backup_enabled"] = confirm("Enable library backups?", default=False)
         if config["backup_enabled"]:
             backup_options = []
             if detect_serato():
@@ -767,11 +582,7 @@ def _edit_config_step(step: int, config: dict) -> None:
             if detect_rekordbox():
                 backup_options.append("Rekordbox")
             if backup_options:
-                selected = _multi_select(
-                    backup_options,
-                    title="  Which libraries to back up?",
-                    status_bar="your crates are precious. back them up.",
-                )
+                selected = multiselect("Which libraries to back up?", backup_options)
                 config["backup_serato"] = "Serato" in [backup_options[i] for i in selected]
                 config["backup_rekordbox"] = "Rekordbox" in [backup_options[i] for i in selected]
 
@@ -783,7 +594,3 @@ def _launch_soundcloud_app() -> None:
         subprocess.run(["open", str(sc_app)], check=False)
     else:
         subprocess.run(["open", "-a", "Google Chrome", "https://soundcloud.com"], check=False)
-
-
-# Old StreamFLACr config directory (for migration)
-_OLD_STREAMFLACR_CONFIG = Path.home() / ".config" / "streamflacr"
