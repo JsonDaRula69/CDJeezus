@@ -457,13 +457,13 @@ def run_setup(*, non_interactive: bool = False) -> None:
                 quip("I guess you're not worried though, the kind you watch would never show up on accident...")
             elif not non_interactive:
                 warn("fpcalc not found")
-                if confirm("Install chromaprint?", default=True):
-                    import platform
-                    system = platform.system()
-                    installed = False
-                    if system == "Darwin":
-                        if _ensure_pkg_manager("brew"):
-                            installed = _run_install(["brew", "install", "chromaprint"])
+                dim("Installing chromaprint...")
+                import platform
+                system = platform.system()
+                installed = False
+                if system == "Darwin":
+                    if _ensure_pkg_manager("brew"):
+                        installed = _run_install(["brew", "install", "chromaprint"])
                     elif system == "Windows":
                         if _ensure_pkg_manager("choco"):
                             installed = _run_install(["choco", "install", "chromaprint", "-y"])
@@ -472,13 +472,11 @@ def run_setup(*, non_interactive: bool = False) -> None:
                             installed = _run_install(["apt", "install", "-y", "chromaprint-tools"])
                         elif shutil.which("dnf"):
                             installed = _run_install(["dnf", "install", "-y", "chromaprint"])
-                    if installed and detect_fpcalc():
-                        ok("chromaprint installed")
-                        fpcalc_available = True
-                    elif not installed:
-                        dim("Could not install chromaprint automatically")
-                else:
-                    warn("Audio fingerprinting disabled without chromaprint")
+                if installed and detect_fpcalc():
+                    ok("chromaprint installed")
+                    fpcalc_available = True
+                elif not installed:
+                    dim("Could not install chromaprint automatically")
                     quip("Guess we're downloading blind. Hope you like surprises.")
             else:
                 dim("chromaprint not found — fingerprinting disabled in non-interactive mode")
