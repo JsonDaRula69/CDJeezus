@@ -9,7 +9,7 @@ from .config import STATE_FILE
 logger = logging.getLogger(__name__)
 
 # Current state schema version — bump when structure changes
-STATE_VERSION = 4
+STATE_VERSION = 5
 
 
 class StateManager:
@@ -35,7 +35,9 @@ class StateManager:
                 }
             }
         },
-        "serato_blocked_transfer": false
+        "serato_blocked_transfer": false,
+        "library_fingerprinted": false,
+        "upscale_prompted": false
     }
     """
 
@@ -80,6 +82,11 @@ class StateManager:
                     info.setdefault("verification_method", "")
                     info.setdefault("verification_confidence", 0.0)
             logger.info("Migrated state from v3 to v4")
+        if from_version < 5:
+            # v4 -> v5: Add library fingerprinting and upscale tracking
+            data.setdefault("library_fingerprinted", False)
+            data.setdefault("upscale_prompted", False)
+            logger.info("Migrated state from v4 to v5")
         data["version"] = STATE_VERSION
         return data
 

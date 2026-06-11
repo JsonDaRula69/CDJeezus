@@ -20,7 +20,7 @@ from .daemon import request_stop
 
 logger = logging.getLogger(__name__)
 
-CURRENT_STATE_VERSION = 4  # Increment when state.json schema changes
+CURRENT_STATE_VERSION = 5  # Increment when state.json schema changes
 
 
 def _get_installed_version() -> str:
@@ -49,6 +49,7 @@ def _migrate_state(state: dict) -> dict:
     v2 (0.20.0+): Has version field, downloaded entries may have label_name.
     v3 (0.24.0+): Adds serato_blocked_transfer flag.
     v4 (0.25.0+): Adds verification fields (verified, verification_method, verification_confidence).
+    v5 (0.26.0+): Adds library_fingerprinted and upscale_prompted flags.
     """
     version = state.get("version", 1)
 
@@ -73,6 +74,12 @@ def _migrate_state(state: dict) -> dict:
                 info.setdefault("verification_method", "")
                 info.setdefault("verification_confidence", 0.0)
         logger.info("Migrated state from v3 to v4")
+
+    if version < 5:
+        # v4 -> v5: Add library fingerprinting and upscale tracking
+        state.setdefault("library_fingerprinted", False)
+        state.setdefault("upscale_prompted", False)
+        logger.info("Migrated state from v4 to v5")
 
     state["version"] = CURRENT_STATE_VERSION
     return state
