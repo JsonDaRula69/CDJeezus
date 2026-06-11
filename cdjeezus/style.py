@@ -172,14 +172,14 @@ BAR_FULL  = "\u2588"  # █
 BAR_PARTS = ["\u258f", "\u258e", "\u258d", "\u258c", "\u258b", "\u258a", "\u2589"]
 
 
-def separator(width: int = 44, char: str = BOX_H) -> str:
+def separator(width: int = 54, char: str = BOX_H) -> str:
     """Horizontal separator line using box-drawing or plain chars."""
     if not _supports_ansi():
         return "  " + "-" * width
     return c(DIM, "  " + char * width)
 
 
-def box(title: str = "", width: int = 44) -> str:
+def box(title: str = "", width: int = 54) -> str:
     """Draw a box frame, optionally with a title.
 
     Returns the top border as a string. Use box_bottom() for closure.
@@ -198,21 +198,21 @@ def box(title: str = "", width: int = 44) -> str:
     return c(DIM, "  " + line)
 
 
-def box_bottom(width: int = 44) -> str:
+def box_bottom(width: int = 54) -> str:
     """Close a box frame."""
     if not _supports_ansi():
         return "  " + "+" + ("-" * width) + "+"
     return c(DIM, "  " + BOX_BL + (BOX_H * (width - 2)) + BOX_BR)
 
 
-def box_mid(width: int = 44) -> str:
+def box_mid(width: int = 54) -> str:
     """Middle separator inside a box."""
     if not _supports_ansi():
         return "  " + "|" + ("-" * (width - 2)) + "|"
     return c(DIM, "  " + BOX_LT + (BOX_H * (width - 2)) + BOX_RT)
 
 
-def box_line(text: str, width: int = 44) -> str:
+def box_line(text: str, width: int = 54) -> str:
     """A line of text inside a box frame, with padding."""
     inner = width - 4  # box sides + padding
     if not _supports_ansi():
@@ -220,7 +220,7 @@ def box_line(text: str, width: int = 44) -> str:
     return c(DIM, "  " + BOX_V + " ") + text.ljust(inner) + c(DIM, BOX_V)
 
 
-def kv_line(key: str, value: str, width: int = 44) -> str:
+def kv_line(key: str, value: str, width: int = 54) -> str:
     """Key-value pair on a box line, with the key in cyan and value in amber."""
     inner = width - 4
     raw_text = f"{key}: {value}"
@@ -424,7 +424,7 @@ def format_step(step: int, total: int, label: str) -> str:
     return step_header(step, total, label)
 
 
-def format_boxed(title: str, lines: list[str], width: int = 44) -> str:
+def format_boxed(title: str, lines: list[str], width: int = 54) -> str:
     """Return a full box with title and content lines."""
     parts = [box(title, width)]
     for line in lines:
@@ -433,7 +433,7 @@ def format_boxed(title: str, lines: list[str], width: int = 44) -> str:
     return "\n".join(parts)
 
 
-def format_kv_box(title: str, pairs: list[tuple[str, str]], width: int = 44) -> str:
+def format_kv_box(title: str, pairs: list[tuple[str, str]], width: int = 54) -> str:
     """Return a box with key-value summary pairs."""
     parts = [box(title, width)]
     for key, value in pairs:
