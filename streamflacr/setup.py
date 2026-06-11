@@ -341,7 +341,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
     print()
 
     # ── Step 1: Primary DJ Software ──
-    print("  [1/7] Which is your primary DJ library?")
+    print("  [1/8] Which is your primary DJ library?")
     serato_found = detect_serato()
     rekordbox_found = detect_rekordbox()
 
@@ -364,7 +364,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
     print(f"  ✓ Primary: {primary.title()}")
 
     # ── Step 2: Secondary DJ & Two-Way Sync ──
-    print("\n  [2/7] Checking for secondary DJ library...")
+    print("\n  [2/8] Checking for secondary DJ library...")
     secondary = "rekordbox" if primary == "serato" else "serato"
     secondary_found = detect_rekordbox() if secondary == "rekordbox" else detect_serato()
 
@@ -395,7 +395,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
         config["download_dir"] = str(Path.home() / "Music" / "RekordboxAutoImport")
 
     # ── Step 3: Soulseek ──
-    print("\n  [3/7] Soulseek setup...")
+    print("\n  [3/8] Soulseek setup...")
     slsk_installed = detect_soulseek_installation()
     slsk_has_data = detect_soulseek_data()
     if slsk_installed:
@@ -423,8 +423,31 @@ def run_setup(*, non_interactive: bool = False) -> None:
         config["slsk_username"] = slsk_creds["username"]
         config["slsk_password"] = slsk_creds["password"]
 
-    # ── Step 4: SoundCloud ──
-    print("\n  [4/7] Checking SoundCloud login...")
+    # ── Step 4: Audio Fingerprinting (AcoustID) ──
+    print("\n  [4/8] Audio fingerprinting setup...")
+    print("  AcoustID identifies songs by their audio fingerprint,")
+    print("  letting us verify downloads match the SoundCloud track.")
+    print("  This prevents downloading the wrong version (e.g. original")
+    print("  mix instead of a remix). It's free for non-commercial use.")
+    print("  Get your key at: https://acoustid.org/api-key")
+    fpcalc_available = detect_fpcalc()
+    if fpcalc_available:
+        print("  ✓ fpcalc (chromaprint) found — audio fingerprinting enabled")
+    else:
+        print("  ✗ fpcalc not found — install chromaprint for fingerprinting: brew install chromaprint")
+    if not non_interactive:
+        acoustid_key = input("  AcoustID API key (press Enter to skip): ").strip()
+        if acoustid_key:
+            print("  ✓ AcoustID API key configured")
+        else:
+            print("  ✗ Skipping AcoustID (fingerprint verification will use metadata only)")
+            acoustid_key = ""
+    else:
+        acoustid_key = os.environ.get("ACOUSTID_API_KEY", "")
+    config["acoustid_api_key"] = acoustid_key
+
+    # ── Step 5: SoundCloud ──
+    print("\n  [5/8] Checking SoundCloud login...")
     sc_logged_in = detect_soundcloud_login()
     user_url = None
     if sc_logged_in:
@@ -458,7 +481,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
     config["user_url"] = user_url
 
     # ── Step 5: Playlist Selection ──
-    print("\n  [5/7] Playlist monitoring...")
+    print("\n  [6/8] Playlist monitoring...")
     if not non_interactive:
         choice = _menu_select(
             ["All playlists", "Custom selection"],
@@ -498,7 +521,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
         ]
 
     # ── Step 6: Library Backups ──
-    print("\n  [6/7] Library backups...")
+    print("\n  [7/8] Library backups...")
     if not non_interactive:
         answer = input("  Enable library backups? [y/N]: ").strip().lower()
         config["backup_enabled"] = answer in ("y", "yes")
@@ -537,7 +560,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
 
     # ── Step 7: Config Summary & Confirm ──
     while True:
-        print("\n  [7/7] Configuration summary:")
+        print("\n  [8/8] Configuration summary:")
         print(f"    Primary DJ:        {config.get('primary_dj', 'serato').title()}")
         print(f"    2-way sync:        {'Yes' if config.get('two_way_sync') else 'No'}")
         print(f"    Soulseek:          {config.get('slsk_username', '')}")
@@ -553,6 +576,8 @@ def run_setup(*, non_interactive: bool = False) -> None:
             if config.get('backup_rekordbox'):
                 libs.append("Rekordbox")
             print(f"    Backup libs:       {', '.join(libs)}")
+        acoustid_status = "Configured" if config.get("acoustid_api_key") else "Not configured (metadata-only verification)"
+        print(f"    AcoustID:          {acoustid_status}")
         print(f"    Download dir:      {config.get('download_dir', '')}")
         print()
 
@@ -565,13 +590,14 @@ def run_setup(*, non_interactive: bool = False) -> None:
                 "Primary DJ software",
                 "2-way sync",
                 "Soulseek credentials",
+                "AcoustID API key",
                 "SoundCloud",
                 "Playlist selection",
                 "Library backups",
                 "Never mind, it's all good",
             ]
             choice = _menu_select(edit_options, title="  Which config to edit?")
-            if choice == 6:  # "Never mind"
+            if choice == 7:  # "Never mind"
                 break
             # Re-run the relevant step by looping back
             _edit_config_step(choice, config)
@@ -677,14 +703,14 @@ def _edit_config_step(step: int, config: dict) -> None:
         slsk_creds = prompt_soulseek_setup()
         config["slsk_username"] = slsk_creds["username"]
         config["slsk_password"] = slsk_creds["password"]
-    elif step == 3:  # SoundCloud
+    elif step == 4:  # SoundCloud
         if not detect_soundcloud_login():
             prompt_soundcloud_login()
         user_url = extract_soundcloud_user_url()
         if not user_url:
             user_url = input("  SoundCloud profile URL: ").strip()
         config["user_url"] = user_url
-    elif step == 4:  # Playlists
+    elif step == 5:  # Playlists
         choice = _menu_select(
             ["All playlists", "Custom selection"],
             title="  Download all playlists or custom selection?",
@@ -700,7 +726,7 @@ def _edit_config_step(step: int, config: dict) -> None:
                 selected = _multi_select(playlist_names, title="  Select playlists:")
                 config["playlist_mode"] = "custom"
                 config["monitored_playlists"] = [playlists[i].url for i in selected]
-    elif step == 5:  # Backups
+    elif step == 6:  # Backups
         answer = input("  Enable library backups? [y/N]: ").strip().lower()
         config["backup_enabled"] = answer in ("y", "yes")
         if config["backup_enabled"]:
