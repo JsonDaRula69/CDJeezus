@@ -2,7 +2,7 @@
 
 Creates a smart crate per SoundCloud playlist with a single rule:
     Comment IS <playlist_name>
-The comment field is reliably written by CDJeezus and consistently
+The comment field is reliably written by CDJeez and consistently
 read by Serato during Auto Import scanning.
 
 Serato data is highly sensitive — we back up before any modification
@@ -60,7 +60,7 @@ def _ensure_serato_tools():
 def ensure_smart_crate(playlist_name: str) -> Path | None:
     """Create or update a Serato smart crate with Comment IS <playlist_name>.
 
-    The comment field is reliably written by CDJeezus and consistently
+    The comment field is reliably written by CDJeez and consistently
     read by Serato during Auto Import scanning.
 
     Backs up the file before any modification. Never deletes existing crates.

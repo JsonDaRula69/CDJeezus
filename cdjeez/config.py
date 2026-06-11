@@ -5,7 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # User-facing config directory (XDG standard)
-CONFIG_DIR: Path = Path(os.environ.get("CDJEEZUS_CONFIG_DIR", str(Path.home() / ".config" / "cdjeezus")))
+CONFIG_DIR: Path = Path(os.environ.get("CDJEEZ_CONFIG_DIR", str(Path.home() / ".config" / "cdjeez")))
 
 # Load .env from config dir first, then fall back to CWD for dev
 _env_file = CONFIG_DIR / ".env"
@@ -56,9 +56,9 @@ MONITORED_PLAYLISTS: list[str] = [
 STATE_FILE: Path = Path(os.environ.get("STATE_FILE", str(CONFIG_DIR / "state.json")))
 
 # Daemon lifecycle files
-PID_FILE: Path = Path(os.environ.get("CDJEEZUS_PID_FILE", str(CONFIG_DIR / "cdjeezus.pid")))
-STOP_FILE: Path = Path(os.environ.get("CDJEEZUS_STOP_FILE", str(CONFIG_DIR / "stop-requested")))
-LOG_FILE: Path = Path(os.environ.get("CDJEEZUS_LOG_FILE", str(CONFIG_DIR / "cdjeezus.log")))
+PID_FILE: Path = Path(os.environ.get("CDJEEZ_PID_FILE", str(CONFIG_DIR / "cdjeez.pid")))
+STOP_FILE: Path = Path(os.environ.get("CDJEEZ_STOP_FILE", str(CONFIG_DIR / "stop-requested")))
+LOG_FILE: Path = Path(os.environ.get("CDJEEZ_LOG_FILE", str(CONFIG_DIR / "cdjeez.log")))
 
 # Search preferences
 SEARCH_TIMEOUT: int = int(os.environ.get("SEARCH_TIMEOUT", "30"))

@@ -1,4 +1,4 @@
-"""Self-update mechanism for CDJeezus.
+"""Self-update mechanism for CDJeez.
 
 Stops the daemon, upgrades the package via pip/uv, preserves config and
 state, then restarts. Also handles data migrations between versions.
@@ -29,7 +29,7 @@ def _get_installed_version() -> str:
 def _get_latest_version() -> str | None:
     try:
         import urllib.request
-        url = "https://pypi.org/pypi/cdjeezus/json"
+        url = "https://pypi.org/pypi/cdjeez/json"
         with urllib.request.urlopen(url, timeout=10) as resp:
             data = json.loads(resp.read())
             return data["info"]["version"]
@@ -121,12 +121,12 @@ def perform_pending_update() -> bool:
 
     try:
         result = subprocess.run(
-            ["uv", "tool", "install", "cdjeezus", "--force", "--reinstall"],
+            ["uv", "tool", "install", "cdjeez", "--force", "--reinstall"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
             result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "cdjeezus"],
+                [sys.executable, "-m", "pip", "install", "--upgrade", "cdjeez"],
                 capture_output=True, text=True, timeout=120,
             )
         if result.returncode != 0:
@@ -183,7 +183,7 @@ def run_update(check_only: bool = False) -> None:
         sys.exit(1)
 
     console.print()
-    boxed('CDJeezus Update', f'Current: v{current}\nLatest:    v{latest}')
+    boxed('CDJeez Update', f'Current: v{current}\nLatest:    v{latest}')
     console.print()
 
     if current == latest:
@@ -194,7 +194,7 @@ def run_update(check_only: bool = False) -> None:
 
     if check_only:
         dim(f"Update available: v{current} -> v{latest}")
-        dim("Run 'cdjeezus update' to install.")
+        dim("Run 'cdjeez update' to install.")
         console.print()
         return
 
@@ -223,12 +223,12 @@ def run_update(check_only: bool = False) -> None:
     step(4, 6, "Upgrading package...")
     try:
         result = subprocess.run(
-            ["uv", "tool", "install", "cdjeezus", "--force", "--reinstall"],
+            ["uv", "tool", "install", "cdjeez", "--force", "--reinstall"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
             result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "cdjeezus"],
+                [sys.executable, "-m", "pip", "install", "--upgrade", "cdjeez"],
                 capture_output=True, text=True, timeout=120,
             )
         if result.returncode != 0:
@@ -278,7 +278,7 @@ def run_update(check_only: bool = False) -> None:
             subprocess.run(["launchctl", "load", str(INSTALLED_PLIST)], capture_output=True, check=False)
             ok("LaunchAgent reloaded")
         else:
-            warn("Could not register LaunchAgent. Run 'cdjeezus setup' to fix.")
+            warn("Could not register LaunchAgent. Run 'cdjeez setup' to fix.")
 
     new_version = _get_installed_version()
     console.print()

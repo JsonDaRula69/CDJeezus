@@ -1,4 +1,4 @@
-"""CLI entry point for CDJeezus.
+"""CLI entry point for CDJeez.
 
 Where your SoundCloud sins meet their Soulseek salvation.
 """
@@ -49,8 +49,8 @@ def _setup_logging(verbose: bool, daemon: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="cdjeezus",
-        description="CDJeezus — SoundCloud > Soulseek > Serato/Rekordbox pipeline",
+        prog="cdjeez",
+        description="CDJeez — SoundCloud > Soulseek > Serato/Rekordbox pipeline",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -63,10 +63,10 @@ def main() -> None:
     setup_parser.add_argument("--non-interactive", action="store_true",
                               help="Non-interactive setup: use env vars or defaults for all prompts")
 
-    update_parser = subparsers.add_parser("update", help="Update CDJeezus to the latest version")
+    update_parser = subparsers.add_parser("update", help="Update CDJeez to the latest version")
     update_parser.add_argument("--check", action="store_true", help="Check for updates without installing")
 
-    subparsers.add_parser("uninstall", help="Remove CDJeezus (safe for your library)")
+    subparsers.add_parser("uninstall", help="Remove CDJeez (safe for your library)")
     subparsers.add_parser("stop", help="Gracefully stop the running daemon")
     subparsers.add_parser("log", help="Show live log output from the running daemon")
 
@@ -81,12 +81,12 @@ def main() -> None:
     if args.command == "stop":
         from .daemon import request_stop
         console.print()
-        boxed(f'CDJeezus v{__version__}', 'Telling the daemon to wrap it up...')
+        boxed(f'CDJeez v{__version__}', 'Telling the daemon to wrap it up...')
         stopped = request_stop(timeout=120)
         if stopped:
-            ok("CDJeezus stopped. Go touch some real vinyl.")
+            ok("CDJeez stopped. Go touch some real vinyl.")
         else:
-            fail("Daemon didn't stop in time. Try again or use `cdjeezus stop`.")
+            fail("Daemon didn't stop in time. Try again or use `cdjeez stop`.")
         console.print()
         return
 
@@ -121,7 +121,7 @@ def main() -> None:
 
     existing_pid = is_running()
     if existing_pid and not args.force:
-        accent(f"CDJeezus is already running (PID {existing_pid})")
+        accent(f"CDJeez is already running (PID {existing_pid})")
         dim("Showing live output (Ctrl+C to detach):\n")
         tail_log()
         return
@@ -155,7 +155,7 @@ def main() -> None:
         importlib.reload(_cfg)
         if not _cfg.is_configured():
             fail("Setup didn't complete.")
-            dim("Run `cdjeezus setup` when you're ready.")
+            dim("Run `cdjeez setup` when you're ready.")
             sys.exit(1)
 
     from .__main__ import amain

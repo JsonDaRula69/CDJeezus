@@ -1,4 +1,4 @@
-# CDJeezus
+# CDJeez
 
 *They said I can't bring my Numark, so I guess we're going old school again.*
 
@@ -17,7 +17,7 @@ Automatically monitors SoundCloud playlists, searches Soulseek for lossless vers
 ## Install
 
 ```bash
-pipx install cdjeezus
+pipx install cdjeez
 ```
 
 Or from source:
@@ -29,7 +29,7 @@ pipx install .
 ## Setup
 
 ```bash
-cdjeezus setup
+cdjeez setup
 ```
 
 The 8-step setup wizard detects your DJ software, configures SoundCloud auth, Soulseek credentials, AcoustID, playlist selection, and library backups.
@@ -37,19 +37,19 @@ The 8-step setup wizard detects your DJ software, configures SoundCloud auth, So
 ## Usage
 
 ```bash
-cdjeezus              # Run once (or attach to running daemon)
-cdjeezus --daemon     # Run as persistent daemon
-cdjeezus stop         # Gracefully stop the daemon
-cdjeezus log          # Tail daemon log output
-cdjeezus setup        # Re-run setup wizard
-cdjeezus update       # Self-update to latest version
-cdjeezus update --check  # Check for updates only
-cdjeezus uninstall    # Interactive uninstall
+cdjeez              # Run once (or attach to running daemon)
+cdjeez --daemon     # Run as persistent daemon
+cdjeez stop         # Gracefully stop the daemon
+cdjeez log          # Tail daemon log output
+cdjeez setup        # Re-run setup wizard
+cdjeez update       # Self-update to latest version
+cdjeez update --check  # Check for updates only
+cdjeez uninstall    # Interactive uninstall
 ```
 
 ## Configuration
 
-All config lives in `~/.config/cdjeezus/.env` (created by `cdjeezus setup`):
+All config lives in `~/.config/cdjeez/.env` (created by `cdjeez setup`):
 
 | Variable | Default | Description |
 |---|---|---|

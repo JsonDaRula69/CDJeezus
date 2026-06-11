@@ -1,4 +1,4 @@
-"""CDJeezus terminal style — powered by rich + questionary.
+"""CDJeez terminal style — powered by rich + questionary.
 
 All rendering goes through rich.Console (cross-platform, Windows/macOS/Linux).
 All interactive prompts go through questionary (arrow keys, space, enter).
@@ -27,7 +27,7 @@ import questionary
 # NO_COLOR is respected by rich automatically (via os.environ)
 console = Console()
 
-# ── Questionary style (CDJeezus palette: cyan pointer, amber highlights) ──
+# ── Questionary style (CDJeez palette: cyan pointer, amber highlights) ──
 QUESTIONARY_STYLE = questionary.Style([
     ('qmark', 'fg:#00ffff bold'),
     ('question', 'bold'),
@@ -43,14 +43,14 @@ QUESTIONARY_STYLE = questionary.Style([
 # ── Output helpers ──────────────────────────────────────────────────────
 
 def banner(version: str) -> None:
-    """Print the CDJeezus ASCII banner with tagline and version."""
+    """Print the CDJeez ASCII banner with tagline and version."""
     art = Text()
-    art.append('   ██████╗██████╗ ██████╗ ███████╗\n', style='bold cyan')
-    art.append('  ██╔════╝██╔══██╗██╔══██╗██╔════╝\n', style='bold cyan')
-    art.append('  ██║     ██████╔╝██████╔╝███████╗\n', style='bold cyan')
-    art.append('  ██║     ██╔══██╗██╔═══╝ ╚════██║\n', style='bold cyan')
-    art.append('  ╚██████╗██║  ██║██║     ███████║\n', style='bold cyan')
-    art.append('   ╚═════╝╚═╝  ╚═╝╚═╝     ╚══════╝\n', style='bold cyan')
+    art.append('  ██████╗ ██████╗  ██╗   ██╗ ██████╗  ██████╗  ███████╗\n', style='bold cyan')
+    art.append(' ██╔════╝ ██╔══██╗ ██║   ██║ ██╔══██╗ ██╔══██╗ ╚════██║\n', style='bold cyan')
+    art.append(' ██║      ██║  ██║ ██║   ██║ ██████╔╝ ██████╔╝    ██╔═╝\n', style='bold cyan')
+    art.append(' ██║      ██║  ██║ ██║   ██║ ██╔══██╗ ██╔══██╗   ██╔═╝\n', style='bold cyan')
+    art.append(' ╚██████╗ ██████╔╝ ╚██████╔╝ ██████╔╝ ██████╔╝  ██████╗\n', style='bold cyan')
+    art.append('  ╚═════╝ ╚═════╝   ╚═════╝  ╚═════╝  ╚═════╝   ╚═════╝\n', style='bold cyan')
     art.append('\n        ', style='')
     art.append("They said I can't bring my Numark, so I guess we're going old school again",
               style='italic yellow')

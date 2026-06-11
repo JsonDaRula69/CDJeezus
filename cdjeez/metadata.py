@@ -68,7 +68,7 @@ def verify_metadata(filepath: Path) -> dict:
                 if frame_id in audio:
                     result[key] = str(audio[frame_id])
             for frame in audio.getall("COMM"):
-                if frame.desc == "CDJeezus" or frame.desc == "":
+                if frame.desc == "CDJeez" or frame.desc == "":
                     result["comment"] = str(frame.text[0]) if frame.text else ""
                     break
         elif filepath.suffix.lower() in (".aiff", ".aif"):
@@ -83,7 +83,7 @@ def verify_metadata(filepath: Path) -> dict:
                     if frame_id in audio.tags:
                         result[key] = str(audio.tags[frame_id])
                 for frame in audio.tags.getall("COMM"):
-                    if frame.desc == "" or frame.desc == "CDJeezus":
+                    if frame.desc == "" or frame.desc == "CDJeez":
                         result["comment"] = str(frame.text[0]) if frame.text else ""
                         break
     except Exception as e:

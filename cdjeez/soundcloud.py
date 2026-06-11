@@ -345,7 +345,7 @@ def _get_user_id() -> int | None:
     # All retries exhausted — notify the user
     from .notify import send_notification
     send_notification(
-        "CDJeezus: SoundCloud Auth Failed",
+        "CDJeez: SoundCloud Auth Failed",
         "Could not connect to SoundCloud. Please make sure you're signed into SoundCloud in Chrome.",
     )
     logger.error("Could not identify SoundCloud user after 3 retries with session refresh")
