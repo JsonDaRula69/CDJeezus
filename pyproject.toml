@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "streamflacr"
+name = "cdjeezus"
 version = "0.27.0"
-description = "Auto-download FLAC from Soulseek for SoundCloud playlist additions"
+description = "SoundCloud → Soulseek → Serato/Rekordbox pipeline with auto-tagging, smart crates, and library backup"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-streamflacr = "streamflacr.cli:main"
+cdjeezus = "cdjeezus.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["streamflacr*"]
+include = ["cdjeezus*"]

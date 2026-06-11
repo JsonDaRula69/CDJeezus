@@ -5,7 +5,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # User-facing config directory (XDG standard)
-CONFIG_DIR: Path = Path(os.environ.get("STREAMFLACR_CONFIG_DIR", str(Path.home() / ".config" / "streamflacr")))
+# Also migrates from old StreamFLACr location if present
+_CDJEEZUS_CONFIG_DIR = Path(os.environ.get("CDJEEZUS_CONFIG_DIR", str(Path.home() / ".config" / "cdjeezus")))
+_OLD_STREAMFLACR_CONFIG = Path.home() / ".config" / "streamflacr"
+
+if not _CDJEEZUS_CONFIG_DIR.exists() and _OLD_STREAMFLACR_CONFIG.exists():
+    # Auto-migrate from StreamFLACr
+    try:
+        _OLD_STREAMFLACR_CONFIG.rename(_CDJEEZUS_CONFIG_DIR)
+    except Exception:
+        pass
+
+CONFIG_DIR: Path = _CDJEEZUS_CONFIG_DIR
 
 # Load .env from config dir first, then fall back to CWD for dev
 _env_file = CONFIG_DIR / ".env"
@@ -56,9 +67,9 @@ MONITORED_PLAYLISTS: list[str] = [
 STATE_FILE: Path = Path(os.environ.get("STATE_FILE", str(CONFIG_DIR / "state.json")))
 
 # Daemon lifecycle files
-PID_FILE: Path = Path(os.environ.get("STREAMFLACR_PID_FILE", str(CONFIG_DIR / "streamflacr.pid")))
-STOP_FILE: Path = Path(os.environ.get("STREAMFLACR_STOP_FILE", str(CONFIG_DIR / "stop-requested")))
-LOG_FILE: Path = Path(os.environ.get("STREAMFLACR_LOG_FILE", str(CONFIG_DIR / "streamflacr.log")))
+PID_FILE: Path = Path(os.environ.get("CDJEEZUS_PID_FILE", str(CONFIG_DIR / "cdjeezus.pid")))
+STOP_FILE: Path = Path(os.environ.get("CDJEEZUS_STOP_FILE", str(CONFIG_DIR / "stop-requested")))
+LOG_FILE: Path = Path(os.environ.get("CDJEEZUS_LOG_FILE", str(CONFIG_DIR / "cdjeezus.log")))
 
 # Search preferences
 SEARCH_TIMEOUT: int = int(os.environ.get("SEARCH_TIMEOUT", "30"))

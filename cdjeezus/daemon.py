@@ -35,7 +35,7 @@ def remove_pid() -> None:
 
 
 def is_running() -> int | None:
-    """Check if a StreamFLACr instance is running.
+    """Check if a CDJeezus instance is running.
 
     Returns the PID of the running instance, or None.
     Cleans up stale PID files automatically.
@@ -127,7 +127,7 @@ def _unload_launchagent() -> None:
 
 
 def tail_log() -> None:
-    """Tail the StreamFLACr log file to show live output.
+    """Tail the CDJeezus log file to show live output.
 
     Blocks until the user presses Ctrl+C.
     """

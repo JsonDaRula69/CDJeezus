@@ -1,4 +1,4 @@
-"""Self-update mechanism for StreamFLACr.
+"""Self-update mechanism for CDJeezus.
 
 Stops the daemon, upgrades the package via pip/uv, preserves config and
 state, then restarts. Also handles data migrations between versions.
@@ -33,7 +33,7 @@ def _get_latest_version() -> str | None:
     """Check PyPI for the latest released version."""
     try:
         import urllib.request
-        url = "https://pypi.org/pypi/streamflacr/json"
+        url = "https://pypi.org/pypi/cdjeezus/json"
         with urllib.request.urlopen(url, timeout=10) as resp:
             data = json.loads(resp.read())
             return data["info"]["version"]
@@ -190,7 +190,7 @@ def auto_update_if_available() -> bool:
 
     # Notify the user
     from .notify import send_notification
-    send_notification("StreamFLACr Update", f"Updating to v{latest}...")
+    send_notification("CDJeezus Update", f"Updating to v{latest}...")
 
     return True
 
@@ -237,12 +237,12 @@ def perform_pending_update() -> bool:
     # Upgrade package
     try:
         result = subprocess.run(
-            ["uv", "tool", "install", "streamflacr", "--force", "--reinstall"],
+            ["uv", "tool", "install", "cdjeezus", "--force", "--reinstall"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
             result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "streamflacr"],
+                [sys.executable, "-m", "pip", "install", "--upgrade", "cdjeezus"],
                 capture_output=True, text=True, timeout=120,
             )
         if result.returncode != 0:
@@ -280,7 +280,7 @@ def perform_pending_update() -> bool:
     logger.info("Auto-update complete: v%s → v%s", current, target)
 
     from .notify import send_notification
-    send_notification("StreamFLACr Updated", f"Updated to v{target}")
+    send_notification("CDJeezus Updated", f"Updated to v{target}")
 
     return True
 
@@ -313,10 +313,10 @@ def run_update(check_only: bool = False) -> None:
 
     if check_only:
         print(f"  Update available: v{current} → v{latest}")
-        print(f"  Run 'streamflacr update' to install.")
+        print(f"  Run 'cdjeezus update' to install.")
         return
 
-    print(f"  Updating StreamFLACr v{current} → v{latest}...")
+    print(f"  Updating CDJeezus v{current} → v{latest}...")
     print()
 
     # Step 1: Back up config and state
@@ -345,12 +345,12 @@ def run_update(check_only: bool = False) -> None:
     print("  [4/6] Upgrading package...")
     try:
         result = subprocess.run(
-            ["uv", "tool", "install", "streamflacr", "--force", "--reinstall"],
+            ["uv", "tool", "install", "cdjeezus", "--force", "--reinstall"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
             result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "streamflacr"],
+                [sys.executable, "-m", "pip", "install", "--upgrade", "cdjeezus"],
                 capture_output=True, text=True, timeout=120,
             )
         if result.returncode != 0:
@@ -406,7 +406,7 @@ def run_update(check_only: bool = False) -> None:
             subprocess.run(["launchctl", "load", str(INSTALLED_PLIST)], capture_output=True, check=False)
             print("  ✓ LaunchAgent reloaded")
         else:
-            print("  ⚠ Could not register LaunchAgent. Run 'streamflacr setup' to fix.")
+            print("  ⚠ Could not register LaunchAgent. Run 'cdjeezus setup' to fix.")
 
     new_version = _get_installed_version()
     print()
@@ -415,6 +415,6 @@ def run_update(check_only: bool = False) -> None:
     print()
     if new_version != latest:
         print(f"  Note: installed v{new_version} differs from PyPI v{latest}")
-        print(f"  You may need to run 'streamflacr update' again.")
+        print(f"  You may need to run 'cdjeezus update' again.")
     print(f"  ───────────────────────────────────────────")
     print()

@@ -66,7 +66,7 @@ def verify_metadata(filepath: Path) -> dict:
                 if frame_id in audio:
                     result[key] = str(audio[frame_id])
             for frame in audio.getall("COMM"):
-                if frame.desc == "StreamFLACr" or frame.desc == "":
+                if frame.desc == "CDJeezus" or frame.desc == "":
                     result["comment"] = str(frame.text[0]) if frame.text else ""
                     break
     except Exception as e:

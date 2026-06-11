@@ -1,4 +1,4 @@
-"""CLI entry point for StreamFLACr."""
+"""CLI entry point for CDJeezus."""
 
 import argparse
 import asyncio
@@ -51,8 +51,8 @@ def _setup_logging(verbose: bool, daemon: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="streamflacr",
-        description="StreamFLACr - Auto-download FLAC from Soulseek for SoundCloud playlist additions",
+        prog="cdjeezus",
+        description="CDJeezus - Auto-download FLAC from Soulseek for SoundCloud playlist additions",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -68,11 +68,11 @@ def main() -> None:
                               help="Non-interactive setup: use env vars or defaults for all prompts")
 
     # update subcommand
-    update_parser = subparsers.add_parser("update", help="Update StreamFLACr to the latest version")
+    update_parser = subparsers.add_parser("update", help="Update CDJeezus to the latest version")
     update_parser.add_argument("--check", action="store_true", help="Check for updates without installing")
 
     # uninstall subcommand
-    subparsers.add_parser("uninstall", help="Remove all StreamFLACr artifacts (safe for Serato)")
+    subparsers.add_parser("uninstall", help="Remove all CDJeezus artifacts (safe for Serato)")
 
     # stop subcommand
     subparsers.add_parser("stop", help="Gracefully stop the running daemon")
@@ -85,19 +85,19 @@ def main() -> None:
     from . import __version__
 
     if args.version:
-        print(f"StreamFLACr v{__version__}")
+        print(f"CDJeezus v{__version__}")
         return
 
     # ── stop command ──────────────────────────────────────────────────
     if args.command == "stop":
         from .daemon import request_stop
-        print(f"  StreamFLACr v{__version__}")
+        print(f"  CDJeezus v{__version__}")
         print("  Stopping daemon...")
         stopped = request_stop(timeout=120)
         if stopped:
-            print("  ✓ StreamFLACr stopped.")
+            print("  ✓ CDJeezus stopped.")
         else:
-            print("  ✗ Daemon did not stop within timeout. Try again or use `streamflacr stop`.")
+            print("  ✗ Daemon did not stop within timeout. Try again or use `cdjeezus stop`.")
         return
 
     # ── log command ────────────────────────────────────────────────────
@@ -122,20 +122,20 @@ def main() -> None:
 
     # ── uninstall command ──────────────────────────────────────────────
     if args.command == "uninstall":
-        print(f"  StreamFLACr v{__version__}")
+        print(f"  CDJeezus v{__version__}")
         from .setup import full_uninstall
         full_uninstall()
         return
 
     # ── default run (one-shot or daemon) ───────────────────────────────
-    print(f"StreamFLACr v{__version__}")
+    print(f"CDJeezus v{__version__}")
 
     from .daemon import is_running, tail_log
 
     # Check if another instance is already running
     existing_pid = is_running()
     if existing_pid and not args.force:
-        print(f"  StreamFLACr is already running (PID {existing_pid})")
+        print(f"  CDJeezus is already running (PID {existing_pid})")
         print(f"  Showing live output (Ctrl+C to detach):\n")
         tail_log()
         return
@@ -157,7 +157,7 @@ def main() -> None:
     from .config import is_configured
 
     if not is_configured():
-        print(f"  Welcome to StreamFLACr v{__version__}! Let's get you set up.")
+        print(f"  Welcome to CDJeezus v{__version__}! Let's get you set up.")
         from .setup import run_setup
         run_setup(non_interactive=False)
         # Reload config module so module-level vars pick up the new .env
@@ -165,7 +165,7 @@ def main() -> None:
         from . import config as _cfg
         importlib.reload(_cfg)
         if not _cfg.is_configured():
-            print("\n  Setup incomplete. Run `streamflacr setup` to try again.\n")
+            print("\n  Setup incomplete. Run `cdjeezus setup` to try again.\n")
             sys.exit(1)
 
     from .__main__ import amain

@@ -1,4 +1,4 @@
-"""StreamFLACr main daemon.
+"""CDJeezus main daemon.
 
 Monitors ALL SoundCloud playlists for the authenticated user, searches
 Soulseek for FLAC versions of new tracks (falling back to 320kbps MP3),
@@ -12,7 +12,7 @@ When Serato DJ is running, downloaded files are held in staging until
 Serato exits — Serato only scans Auto Import on startup, so importing
 while Serato is active would be invisible until restart.
 
-Supports graceful shutdown via `streamflacr stop` (SIGUSR1 + flag file).
+Supports graceful shutdown via `cdjeezus stop` (SIGUSR1 + flag file).
 """
 
 import asyncio
@@ -51,7 +51,7 @@ from .soundcloud import (
 from .soulseek import SoulseekDownloader
 from .state import StateManager
 
-logger = logging.getLogger("streamflacr")
+logger = logging.getLogger("cdjeezus")
 
 # Module-level event for graceful shutdown signaling
 _stop_event: asyncio.Event | None = None
@@ -110,7 +110,7 @@ async def process_new_track(
     if not raw_candidates:
         msg = f"No FLAC or 320kbps MP3 found: {display_artist} - {track.title}"
         logger.warning(msg)
-        send_notification("StreamFLACr: Not Found", msg)
+        send_notification("CDJeezus: Not Found", msg)
         return []
 
     candidates = filter_and_rank_candidates(
@@ -123,7 +123,7 @@ async def process_new_track(
     if not candidates:
         msg = f"No matching result on Soulseek: {display_artist} - {track.title}"
         logger.warning(msg)
-        send_notification("StreamFLACr: No Match", msg)
+        send_notification("CDJeezus: No Match", msg)
         return []
 
     # Whether to use fingerprint verification
@@ -246,7 +246,7 @@ async def process_new_track(
         best = candidates[0]
         msg = f"Could not verify any match for {display_artist} - {track.title}"
         logger.warning(msg)
-        send_notification("StreamFLACr: Uncertain Match", msg)
+        send_notification("CDJeezus: Uncertain Match", msg)
 
     return downloaded
 
@@ -349,7 +349,7 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
                             logger.info("Auto-update scheduled, shutting down for upgrade")
                             from .notify import send_notification
                             send_notification(
-                                "StreamFLACr",
+                                "CDJeezus",
                                 "Restarting to apply update...",
                             )
                             # Trigger graceful shutdown
@@ -386,7 +386,7 @@ async def run_once(slsk: SoulseekDownloader, state: StateManager) -> None:
 async def graceful_shutdown(slsk: SoulseekDownloader, state: StateManager) -> None:
     """Complete in-progress work and shut down gracefully.
 
-    Called when `streamflacr stop` signals the daemon to stop.
+    Called when `cdjeezus stop` signals the daemon to stop.
     - Ensures metadata is applied to any untagged files in staging
     - Flushes staging to Auto Import if Serato is not running
     - Notes pending transfers in state if Serato IS running
@@ -417,7 +417,7 @@ async def graceful_shutdown(slsk: SoulseekDownloader, state: StateManager) -> No
                 len(pending),
             )
             send_notification(
-                "StreamFLACr",
+                "CDJeezus",
                 f"{len(pending)} track(s) will import when Serato is restarted",
             )
 

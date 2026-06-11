@@ -2,7 +2,7 @@
 
 Zips the metadata portions of DJ libraries (excluding actual audio files)
 and stores them in ~/Music/LibraryBackups. Backups run before/after every
-StreamFLACr session and on exit of the selected DJ software(s).
+CDJeezus session and on exit of the selected DJ software(s).
 
 Serato backup excludes: Auto Import, Imported, Recording, SeratoVideo
 Rekordbox backup: database files + share directory (no audio files)

@@ -17,7 +17,7 @@ jobs:
       - name: Install package
         run: pip install -e ".[dev]"
       - name: Check imports
-        run: python -c "import streamflacr; print(streamflacr.__version__)"
+        run: python -c "import cdjeezus; print(cdjeezus.__version__)"
 
   build:
     runs-on: ubuntu-latest
