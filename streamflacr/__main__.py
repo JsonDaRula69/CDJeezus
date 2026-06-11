@@ -32,6 +32,7 @@ from .config import (
     BACKUP_REKORDBOX,
     PLAYLIST_MODE,
     MONITORED_PLAYLISTS,
+    AUTO_UPDATE_INTERVAL,
 )
 from .daemon import write_pid, remove_pid, should_stop, clear_stop_flag
 from .backup import run_backups
@@ -341,8 +342,22 @@ async def poll_loop(slsk: SoulseekDownloader, state: StateManager) -> None:
                     # If we get here, stop was requested
                     break
                 except asyncio.TimeoutError:
-                    # Normal poll cycle
-                    pass
+                    # Normal poll cycle — check for auto-update
+                    from .updater import auto_update_if_available
+                    try:
+                        if auto_update_if_available():
+                            logger.info("Auto-update scheduled, shutting down for upgrade")
+                            from .notify import send_notification
+                            send_notification(
+                                "StreamFLACr",
+                                "Restarting to apply update...",
+                            )
+                            # Trigger graceful shutdown
+                            if _stop_event is not None:
+                                _stop_event.set()
+                            break
+                    except Exception as e:
+                        logger.debug("Auto-update check failed: %s", e)
     finally:
         flush_task.cancel()
 
@@ -453,6 +468,15 @@ async def amain(daemon: bool = False) -> None:
 
     # Write PID file
     write_pid()
+
+    # Check for and perform any pending auto-update before starting
+    from .updater import perform_pending_update
+    if perform_pending_update():
+        logger.info("Auto-update performed, restarting with new version")
+        # The new version will be picked up on next launch
+        remove_pid()
+        clear_stop_flag()
+        return
 
     # Run pre-session backup if enabled
     if BACKUP_ENABLED:

@@ -200,6 +200,9 @@ FINGERPRINT_VERIFY=1
 
 # Library upscaling
 UPSCALE_ENABLED=0
+
+# Auto-update interval (seconds, default 4 hours)
+AUTO_UPDATE_INTERVAL=14400
 """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     ENV_FILE.write_text(content)
@@ -277,7 +280,12 @@ def unregister_launchdaemon() -> bool:
 # ── Uninstall ──────────────────────────────────────────────────────────
 
 def full_uninstall() -> None:
-    """Interactive uninstall. Asks about keeping migration data."""
+    """Interactive uninstall. Asks about keeping streaming source migration data.
+
+    Removes all StreamFLACr artifacts: config, staging, logs, LaunchAgent.
+    Never touches Serato or Rekordbox library data.
+    The only prompt asks whether to keep migration data (state.json, .env).
+    """
     from . import __version__
     print(f"\n  StreamFLACr v{__version__} Uninstall\n")
 
@@ -289,14 +297,14 @@ def full_uninstall() -> None:
     unregister_launchdaemon()
 
     # Ask about migration data
-    keep_data = input("  Keep downloaded music files and migration data? [Y/n]: ").strip().lower()
+    keep_data = input("  Keep streaming source migration data? [Y/n]: ").strip().lower()
     keep_data = keep_data in ("", "y", "yes")
 
-    # Remove config
+    # Remove config directory
     if CONFIG_DIR.exists():
         if keep_data:
-            # Keep state.json and .env, remove everything else
-            for item in CONFIG_DIR.iterdir():
+            # Keep state.json and .env (migration data), remove everything else
+            for item in list(CONFIG_DIR.iterdir()):
                 if item.name in ("state.json", ".env"):
                     continue
                 if item.is_dir():
@@ -306,24 +314,22 @@ def full_uninstall() -> None:
             print("  ✓ Config removed (kept state.json and .env)")
         else:
             shutil.rmtree(CONFIG_DIR, ignore_errors=True)
-            print("  ✓ All config removed")
+            print("  ✓ All config and migration data removed")
 
-    # Remove plist
+    # Remove plist (both current and legacy names)
     for plist in (INSTALLED_PLIST, LEGACY_PLIST):
         if plist.exists():
             subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, check=False)
             plist.unlink()
-
-    # Remove Serato backups (but NOT smart crates or library files)
-    from .serato_crate import BACKUP_DIR as SERATO_BACKUP_DIR
-    if SERATO_BACKUP_DIR.exists() and not keep_data:
-        shutil.rmtree(SERATO_BACKUP_DIR, ignore_errors=True)
-        print("  ✓ Serato backups removed")
-
-    # Note: we never touch _Serato_ or Rekordbox library data
     print("  ✓ LaunchAgent removed")
+
+    # NOTE: We do NOT remove backup directories. These are safety nets
+    # for the user's DJ library data and must survive uninstall.
+    # The user can manually delete them if desired.
+
     print("  ✓ Daemon stopped")
     print()
+    print("  Backups were NOT removed (~/Music/LibraryBackups).")
     print("  Serato and Rekordbox libraries were NOT modified.")
     print()
 
@@ -709,6 +715,14 @@ def _edit_config_step(step: int, config: dict) -> None:
         slsk_creds = prompt_soulseek_setup()
         config["slsk_username"] = slsk_creds["username"]
         config["slsk_password"] = slsk_creds["password"]
+    elif step == 3:  # AcoustID
+        fpcalc_available = detect_fpcalc()
+        if fpcalc_available:
+            print("  fpcalc (chromaprint) is installed.")
+        else:
+            print("  fpcalc not found — install chromaprint: brew install chromaprint")
+        acoustid_key = input("  AcoustID API key (press Enter to skip): ").strip()
+        config["acoustid_api_key"] = acoustid_key
     elif step == 4:  # SoundCloud
         if not detect_soundcloud_login():
             prompt_soundcloud_login()

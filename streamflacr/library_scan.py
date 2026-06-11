@@ -45,7 +45,7 @@ def scan_serato_library() -> list[LibraryTrack]:
     # Also check common music locations
     for music_sub in Path.home().glob("Music/*/"):
         if music_sub.is_dir() and music_sub.name not in {
-            "_Serato_", "_Serato_Backup_SFr", "LibraryBackups"
+            "_Serato_", "LibraryBackups"
         }:
             audio_dirs.append(music_sub)
 
@@ -102,7 +102,7 @@ def scan_rekordbox_library() -> list[LibraryTrack]:
     # Fallback: scan common music directories
     for music_sub in Path.home().glob("Music/*/"):
         if music_sub.is_dir() and music_sub.name not in {
-            "_Serato_", "_Serato_Backup_SFr", "LibraryBackups"
+            "_Serato_", "LibraryBackups"
         }:
             for ext in ("*.flac", "*.mp3", "*.aiff", "*.aif", "*.wav", "*.aac", "*.m4a"):
                 for f in music_sub.rglob(ext):

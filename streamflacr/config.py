@@ -75,6 +75,9 @@ FINGERPRINT_VERIFY: bool = os.environ.get("FINGERPRINT_VERIFY", "1") == "1"
 # Library upscaling (replace low-quality files with higher quality)
 UPSCALE_ENABLED: bool = os.environ.get("UPSCALE_ENABLED", "0") == "1"
 
+# Auto-update: check PyPI for new versions on startup and every N seconds
+AUTO_UPDATE_INTERVAL: int = int(os.environ.get("AUTO_UPDATE_INTERVAL", "14400"))  # 4 hours
+
 
 def is_configured() -> bool:
     """Check if the minimum required configuration is present."""
