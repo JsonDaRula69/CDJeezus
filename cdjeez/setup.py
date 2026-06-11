@@ -204,6 +204,25 @@ def full_uninstall() -> None:
     boxed(f'CDJeez v{__version__} — Uninstall', 'Destroying the evidence.')
     console.print()
 
+    if not sys.stdout.isatty():
+        # Non-interactive: just uninstall
+        pass
+    else:
+        uninstall_choice = select("Last chance to back out:", [
+            "Yeah, destroying the evidence is always a good idea",
+            "No, I changed my mind",
+        ])
+        if uninstall_choice == 1:
+            quip("Damn ok, I thought I finally get to dip.")
+            quip("Well I'm just keeping an eye on your SoundCloud — if anything new drops")
+            quip("into your selected playlists they'll go... somewhere.")
+            console.print()
+            return
+        quip("Although I was gonna start organizing your library for you next.")
+        quip("Mostly out of self preservation. I don't wanna be there when you drop")
+        quip("this 128kbps cheese grater.")
+        console.print()
+
     from .daemon import request_stop, is_running
     if is_running():
         dim("Stopping daemon...")
@@ -238,9 +257,6 @@ def full_uninstall() -> None:
     console.print()
     separator()
     dim("Music files, DJ libraries, and backups were NOT modified.")
-    quip("Although I was gonna start organizing your library for you next.")
-    quip("Mostly out of self preservation. I don't wanna be there when you drop")
-    quip("this 128kbps cheese grater.")
     separator()
     console.print()
 
