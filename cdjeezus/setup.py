@@ -27,16 +27,12 @@ logger = logging.getLogger(__name__)
 ENV_FILE = CONFIG_DIR / ".env"
 INSTALLED_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.cdjeezus.plist"
 LEGACY_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.cdjeezus.plist"
-STREAMFLACR_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.streamflacr.plist"
-STREAMFLACR_LEGACY_PLIST = Path.home() / "Library" / "LaunchAgents" / "com.djtchill.streamflacr.plist"
-
-_OLD_STREAMFLACR_CONFIG = Path.home() / ".config" / "streamflacr"
 
 
 def kill_running_daemon() -> bool:
     """Kill any stale cdjeezus daemon from a previous run."""
     import signal
-    for plist in (INSTALLED_PLIST, LEGACY_PLIST, STREAMFLACR_PLIST, STREAMFLACR_LEGACY_PLIST):
+    for plist in (INSTALLED_PLIST, LEGACY_PLIST):
         if plist.exists():
             subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, check=False)
 
@@ -45,7 +41,7 @@ def kill_running_daemon() -> bool:
     killed = False
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "python.*(cdjeezus|streamflacr)"],
+            ["pgrep", "-f", "python.*cdjeezus"],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode == 0:
@@ -204,7 +200,7 @@ def full_uninstall() -> None:
             ok("Daemon force-stopped")
 
     removed_plist = False
-    for plist in (INSTALLED_PLIST, LEGACY_PLIST, STREAMFLACR_PLIST, STREAMFLACR_LEGACY_PLIST):
+    for plist in (INSTALLED_PLIST, LEGACY_PLIST):
         if plist.exists():
             subprocess.run(["launchctl", "unload", str(plist)], capture_output=True, check=False)
             plist.unlink()
@@ -243,16 +239,6 @@ def run_setup(*, non_interactive: bool = False) -> None:
     console.print()
     boxed('CDJeezus Setup Wizard', f'v{__version__} — 8 steps to DJ salvation')
     console.print()
-
-    # Migrate from StreamFLACr if needed
-    if _OLD_STREAMFLACR_CONFIG.exists() and not CONFIG_DIR.exists():
-        dim("Migrating config from StreamFLACr to CDJeezus...")
-        try:
-            _OLD_STREAMFLACR_CONFIG.rename(CONFIG_DIR)
-            ok("Migrated config from StreamFLACr to CDJeezus")
-        except Exception as e:
-            logger.warning("Could not auto-migrate: %s", e)
-        console.print()
 
     # ── Step 1: Primary DJ ──
     serato_found = detect_serato()

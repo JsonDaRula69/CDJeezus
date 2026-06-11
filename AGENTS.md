@@ -141,7 +141,7 @@ SoundCloud API → metadata (artist, title, duration)
 ## Notes & Gotchas
 
 - **Plist rename**: v0.12.1 changed plist from `com.djtchill.cdjeezus` to `com.cdjeezus`. Uninstall must check BOTH names. Setup must unload old plist if it exists.
-- **Also check**: `com.streamflacr` and `com.djtchill.streamflacr` (legacy names from pre-renaming)
+- **Also check**: `com.djtchill.cdjeezus` (legacy name from v0.12.1)
 - **Chrome PWA**: OAuth retry looks for `~/Applications/Chrome Apps.localized/SoundCloud.app` before falling back to full Chrome.
 - **aioslsk port conflicts**: If ports 60000/60001 are occupied, `soulseek.py` continues without listening ports (download still works, upload won't).
 - **SoundCloud DRM**: We only use API v2 for metadata (never yt-dlp). DRM errors should not occur.

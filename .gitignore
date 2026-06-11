@@ -29,3 +29,5 @@ token.json
 
 # OS
 Thumbs.db
+*.m4a
+*.aiff

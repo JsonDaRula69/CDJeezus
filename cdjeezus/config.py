@@ -5,18 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # User-facing config directory (XDG standard)
-# Also migrates from old StreamFLACr location if present
-_CDJEEZUS_CONFIG_DIR = Path(os.environ.get("CDJEEZUS_CONFIG_DIR", str(Path.home() / ".config" / "cdjeezus")))
-_OLD_STREAMFLACR_CONFIG = Path.home() / ".config" / "streamflacr"
-
-if not _CDJEEZUS_CONFIG_DIR.exists() and _OLD_STREAMFLACR_CONFIG.exists():
-    # Auto-migrate from StreamFLACr
-    try:
-        _OLD_STREAMFLACR_CONFIG.rename(_CDJEEZUS_CONFIG_DIR)
-    except Exception:
-        pass
-
-CONFIG_DIR: Path = _CDJEEZUS_CONFIG_DIR
+CONFIG_DIR: Path = Path(os.environ.get("CDJEEZUS_CONFIG_DIR", str(Path.home() / ".config" / "cdjeezus")))
 
 # Load .env from config dir first, then fall back to CWD for dev
 _env_file = CONFIG_DIR / ".env"

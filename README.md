@@ -1,15 +1,15 @@
 # CDJeezus
 
-*Because the way some DJs talk about Pioneer equipment, it's not a brand — it's a religion. This is the software that lets you take communion.*
+*They said I can't bring my Numark, so I guess we're going old school again.*
 
-Automatically monitors SoundCloud playlists, searches Soulseek for lossless versions, downloads them, tags metadata, creates Serato smart crates, and keeps your DJ library backed up.
+Automatically monitors SoundCloud playlists, searches Soulseek for lossless versions (AIFF > WAV > FLAC > MP3 320kbps), downloads them, converts to AIFF for CDJ compatibility, tags metadata, creates Serato smart crates, and keeps your DJ library backed up.
 
 ## How it works
 
 1. **Discovers** all your SoundCloud playlists automatically (including private ones)
 2. **Monitors** for new tracks added to any playlist
-3. **Searches** Soulseek for FLAC (or 320kbps MP3) versions of each track
-4. **Verifies** downloads via audio fingerprinting (chromaprint/AcoustID) when available
+3. **Searches** Soulseek for lossless versions (AIFF > WAV > FLAC > MP3 320kbps)
+4. **Converts** FLAC/WAV to AIFF for maximum CDJ and Serato compatibility
 5. **Tags** metadata: artist, title, comment (playlist name), label, ISRC, composer
 6. **Creates** a Serato smart crate per playlist with rule: `Comment IS <playlist_name>`
 7. **Backs up** your Serato/Rekordbox metadata before every session
@@ -70,10 +70,3 @@ All config lives in `~/.config/cdjeezus/.env` (created by `cdjeezus setup`):
 | `MIN_FILESIZE_MB` | `5` | Skip files smaller than this |
 | `FINGERPRINT_VERIFY` | `1` | Enable audio fingerprint verification |
 | `UPSCALE_ENABLED` | `0` | Enable library upscaling (not yet implemented) |
-
-## Migration from StreamFLACr
-
-CDJeezus automatically migrates your existing StreamFLACr configuration:
-- `~/.config/streamflacr/` → `~/.config/cdjeezus/`
-- LaunchAgent plist is updated from `com.streamflacr` to `com.cdjeezus`
-- All state, config, and history is preserved
