@@ -20,7 +20,7 @@ from .daemon import request_stop
 
 logger = logging.getLogger(__name__)
 
-CURRENT_STATE_VERSION = 3  # Increment when state.json schema changes
+CURRENT_STATE_VERSION = 4  # Increment when state.json schema changes
 
 
 def _get_installed_version() -> str:
@@ -48,6 +48,7 @@ def _migrate_state(state: dict) -> dict:
     v1 (pre-0.20.0): No version field, downloaded entries lack label_name.
     v2 (0.20.0+): Has version field, downloaded entries may have label_name.
     v3 (0.24.0+): Adds serato_blocked_transfer flag.
+    v4 (0.25.0+): Adds verification fields (verified, verification_method, verification_confidence).
     """
     version = state.get("version", 1)
 
@@ -63,6 +64,15 @@ def _migrate_state(state: dict) -> dict:
         # v2 -> v3: Add serato_blocked_transfer flag
         state.setdefault("serato_blocked_transfer", False)
         logger.info("Migrated state from v2 to v3")
+
+    if version < 4:
+        # v3 -> v4: Add verification fields to downloaded entries
+        for url, playlist in state.get("playlists", {}).items():
+            for tid, info in playlist.get("downloaded", {}).items():
+                info.setdefault("verified", None)
+                info.setdefault("verification_method", "")
+                info.setdefault("verification_confidence", 0.0)
+        logger.info("Migrated state from v3 to v4")
 
     state["version"] = CURRENT_STATE_VERSION
     return state

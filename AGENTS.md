@@ -1,6 +1,6 @@
 # StreamFLACr — Project Knowledge Base
 
-**Last updated:** v0.24.0
+**Last updated:** v0.25.0
 **Stack:** Python 3.11+, macOS, aioslsk, mutagen, serato-tools, pydantic-settings
 
 ## Overview
@@ -16,6 +16,7 @@ streamflacr/
 ├── cli.py               # Argparse entry point, logging config, instance detection, stop/log commands
 ├── config.py            # Env-based config via .env in ~/.config/streamflacr/
 ├── daemon.py            # PID tracking, stop signaling (SIGUSR1 + flag file), single-instance, log tailing
+├── fingerprint.py       # Audio fingerprinting via chromaprint/AcoustID for download verification
 ├── soundcloud.py        # API v2 with dual-attempt auth (OAuth first, client_id fallback)
 ├── soulseek.py           # Search/download via aioslsk; graceful port conflict handling
 ├── match.py              # Fuzzy matching: filename parsing, version descriptors, scoring
@@ -24,7 +25,7 @@ streamflacr/
 ├── serato_watch.py       # Detect Serato running; flush staging → Auto Import on exit
 ├── notify.py             # macOS notifications via osascript
 ├── setup.py              # Interactive setup wizard, full_uninstall(), LaunchDaemon management
-├── state.py              # JSON state file tracking seen tracks, download history, serato_blocked flag
+├── state.py              # JSON state file tracking seen tracks, download history, verification status
 └── updater.py             # Self-update: stop daemon, upgrade, migrate data, restart
 ```
 
@@ -43,8 +44,10 @@ streamflacr/
 | Change daemon poll interval | `config.py` | `SOUNDCLOUD_POLL_INTERVAL` (default 300s) |
 | Change backup rotation | `serato_crate.py` | `MAX_BACKUPS = 5` |
 | Fix OAuth auth flow | `soundcloud.py` | `_get_user_id()` — Chrome launch + 3 retries |
-| Fix setup wizard steps | `setup.py` | `run_setup()` — 3 steps (SoundCloud, Soulseek, Config) |
+| Fix setup wizard steps | `setup.py` | `run_setup()` — 4 steps (SoundCloud, Fingerprinting, Soulseek, Config) |
 | Change state schema | `state.py` + `updater.py` | `STATE_VERSION`, `_migrate_state()` |
+| Change fingerprint verification | `fingerprint.py` | `verify_download()`, `check_fpcalc()`, `lookup_acoustid()` |
+| Change AcoustID config | `config.py` | `ACOUSTID_API_KEY`, `FINGERPRINT_VERIFY` |
 
 ## Architecture & Design Decisions
 
@@ -95,6 +98,25 @@ Version-tracked at `~/.config/streamflacr/state.json`. Current schema is v3:
 - `version`: schema version (for migrations)
 - `playlists`: map of playlist URL → `{name, seen_track_ids, downloaded}`
 - `serato_blocked_transfer`: whether files are pending in staging because Serato is running
+
+### Audio Fingerprinting & Verification
+
+After downloading a file from Soulseek, StreamFLACr verifies it matches the expected SoundCloud track using three tiers:
+
+1. **Tier 1 — Metadata only** (always available): Compares the downloaded file's own tags (artist, title) against SoundCloud metadata. Uses the same scoring algorithm as `match.py`.
+
+2. **Tier 2 — Fingerprint duration** (requires `fpcalc`/chromaprint): Generates a chromaprint fingerprint and gets an accurate audio duration. Compares with SoundCloud's reported duration. Combined with metadata check for a more reliable score.
+
+3. **Tier 3 — AcoustID lookup** (requires `fpcalc` + API key): Looks up the fingerprint on AcoustID's database. If the ISRC matches SoundCloud's ISRC, it's a definitive verification (confidence 1.0). If only title/artist match, it's high confidence (0.7-0.95).
+
+If verification fails (confidence < 0.5), StreamFLACr skips the download and tries the next candidate. This prevents downloading the wrong version of a song — e.g., an original mix when the SoundCloud track is a remix.
+
+**Custom mixes** that aren't in AcoustID will fall back to tiers 1-2. Uncertain matches are logged and the user is notified.
+
+- `fpcalc` is detected during setup and in `fingerprint.py:check_fpcalc()`
+- `ACOUSTID_API_KEY` is optional — without it, only tiers 1-2 are used
+- `FINGERPRINT_VERIFY=1` (default) enables verification; set to `0` to disable
+- Setup wizard step 2 checks for `fpcalc` and suggests `brew install chromaprint`
 
 ### Data Migration
 When any code change modifies the format of `state.json`, config, or other operational data, a migration step must be added to `updater._migrate_state()`. Similarly, any code change requires evaluating whether the installer (`setup.py`) or uninstaller (`full_uninstall()`) need updates.
@@ -153,3 +175,6 @@ streamflacr uninstall    # Interactive uninstall (asks about keeping migration d
 - **Single instance**: Running `streamflacr` when a daemon is already running tails the log file instead of starting a duplicate. `--force` overrides this.
 - **Log file**: `~/.config/streamflacr/streamflacr.log` (rotating, 5MB max, 3 backups). Both console and file handlers are always active.
 - **PID file**: `~/.config/streamflacr/streamflacr.pid` tracks the running daemon process. Stale PIDs are cleaned up automatically.
+- **Download verification**: Each download is verified via `fingerprint.py` using chromaprint + AcoustID (if available). Low-confidence matches are skipped and the next candidate is tried. The `state.json` tracks `verified`, `verification_method`, and `verification_confidence` per download.
+- **fpcalc/chromaprint**: Optional but recommended. Install via `brew install chromaprint`. Without it, only metadata-based verification is used.
+- **AcoustID**: Optional API key at https://acoustid.org/api-key. Enables ISRC-based definitive matching. Set `ACOUSTID_API_KEY` in `.env`.

@@ -113,6 +113,19 @@ def detect_soulseek_data() -> bool:
     return data_dir.exists() and any(data_dir.iterdir())
 
 
+
+def detect_fpcalc() -> bool:
+    """Check if fpcalc (chromaprint) is installed."""
+    try:
+        result = subprocess.run(
+            ["fpcalc", "-version"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
 def prompt_soulseek_setup() -> dict:
     print("\n  Soulseek credentials required for downloading FLAC files.")
     print("  If you don't have an account, visit https://www.slsknet.org\n")
@@ -153,6 +166,11 @@ SERATO_DIR={SERATO_DIR}
 SEARCH_TIMEOUT=30
 PREFER_FREE_SLOTS=1
 MIN_FILESIZE_MB=5
+
+# Audio fingerprinting (optional — enhances download verification)
+# Get an API key at https://acoustid.org/api-key
+ACOUSTID_API_KEY=
+FINGERPRINT_VERIFY=1
 """
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     ENV_FILE.write_text(content)
@@ -372,7 +390,7 @@ def run_setup(*, non_interactive: bool = False) -> None:
     print()
 
     # ── Step 1: SoundCloud ──
-    print("  [1/3] Checking SoundCloud login...")
+    print("  [1/4] Checking SoundCloud login...")
     sc_logged_in = detect_soundcloud_login()
     user_url = None
     if sc_logged_in:
@@ -405,8 +423,16 @@ def run_setup(*, non_interactive: bool = False) -> None:
         while not user_url:
             user_url = input("  SoundCloud profile URL: ").strip()
 
-    # ── Step 2: Soulseek ──
-    print("\n  [2/3] Checking Soulseek...")
+    # ── Step 2: Audio fingerprinting ──
+    fpcalc_available = detect_fpcalc()
+    if fpcalc_available:
+        print("  ✓ fpcalc (chromaprint) found — audio verification enabled")
+    else:
+        print("  ✗ fpcalc not found — audio verification disabled")
+        print("  Install chromaprint for download verification: brew install chromaprint")
+
+    # ── Step 3: Soulseek ──
+    print("\n  [3/4] Checking Soulseek...")
     slsk_installed = detect_soulseek_installation()
     slsk_has_data = detect_soulseek_data()
     if slsk_installed:
@@ -433,8 +459,8 @@ def run_setup(*, non_interactive: bool = False) -> None:
     else:
         slsk_creds = prompt_soulseek_setup()
 
-    # ── Step 3: Write config + register daemon ──
-    print("\n  [3/3] Finishing up...")
+    # ── Step 4: Write config + register daemon ──
+    print("\n  [4/4] Finishing up...")
     write_env_file(slsk_creds, user_url)
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     STAGING_DIR.mkdir(parents=True, exist_ok=True)

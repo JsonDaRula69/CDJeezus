@@ -52,3 +52,10 @@ SERATO_CHECK_INTERVAL: int = int(os.environ.get("SERATO_CHECK_INTERVAL", "30"))
 def is_configured() -> bool:
     """Check if the minimum required configuration is present."""
     return bool(SLSK_USERNAME and SLSK_PASSWORD and SOUNDCLOUD_USER_URL)
+
+# Audio fingerprinting (optional — enhances download verification)
+# Get an API key at https://acoustid.org/api-key for AcoustID lookups
+ACOUSTID_API_KEY: str = os.environ.get("ACOUSTID_API_KEY", "")
+
+# Whether to verify downloads via audio fingerprinting (requires fpcalc)
+FINGERPRINT_VERIFY: bool = os.environ.get("FINGERPRINT_VERIFY", "1") == "1"

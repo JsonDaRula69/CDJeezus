@@ -9,15 +9,15 @@ from .config import STATE_FILE
 logger = logging.getLogger(__name__)
 
 # Current state schema version — bump when structure changes
-STATE_VERSION = 3
+STATE_VERSION = 4
 
 
 class StateManager:
     """Tracks which tracks have been seen and downloaded.
 
-    State schema (v3):
+    State schema (v4):
     {
-        "version": 3,
+        "version": 4,
         "playlists": {
             "<playlist_url>": {
                 "name": "<playlist_name>",
@@ -27,7 +27,10 @@ class StateManager:
                         "artist": "...",
                         "title": "...",
                         "local_path": "...",
-                        "downloaded_at": "2026-01-01T00:00:00"
+                        "downloaded_at": "2026-01-01T00:00:00",
+                        "verified": true,
+                        "verification_method": "isrc_match",
+                        "verification_confidence": 1.0
                     }
                 }
             }
@@ -69,6 +72,14 @@ class StateManager:
         if from_version < 3:
             # v2 -> v3: Add serato_blocked_transfer flag
             data.setdefault("serato_blocked_transfer", False)
+        if from_version < 4:
+            # v3 -> v4: Add verification fields to downloaded entries
+            for url, playlist in data.get("playlists", {}).items():
+                for tid, info in playlist.get("downloaded", {}).items():
+                    info.setdefault("verified", None)
+                    info.setdefault("verification_method", "")
+                    info.setdefault("verification_confidence", 0.0)
+            logger.info("Migrated state from v3 to v4")
         data["version"] = STATE_VERSION
         return data
 
@@ -83,7 +94,7 @@ class StateManager:
         existing.update(track_ids)
         self._state["playlists"][playlist_url]["seen_track_ids"] = list(existing)
 
-    def mark_downloaded(self, playlist_url: str, track_id: str, artist: str, title: str, local_path: str) -> None:
+    def mark_downloaded(self, playlist_url: str, track_id: str, artist: str, title: str, local_path: str, verified: bool | None = None, verification_method: str = "", verification_confidence: float = 0.0) -> None:
         if playlist_url not in self._state["playlists"]:
             self._state["playlists"][playlist_url] = {"seen_track_ids": [], "downloaded": {}}
         from datetime import datetime, timezone
@@ -92,6 +103,9 @@ class StateManager:
             "title": title,
             "local_path": local_path,
             "downloaded_at": datetime.now(timezone.utc).isoformat(),
+            "verified": verified,
+            "verification_method": verification_method,
+            "verification_confidence": verification_confidence,
         }
         self.save()
 

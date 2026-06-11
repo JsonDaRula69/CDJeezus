@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import sys
 import time
 
 import requests
@@ -369,8 +370,14 @@ def discover_user_playlists(user_sets_url: str | None = None) -> list[PlaylistIn
             return all_playlists
         if attempt < max_retries:
             wait = 10 + 5 * attempt
-            logger.warning("SoundCloud returned 0 playlists (attempt %d/%d); retrying in %ds", attempt, max_retries, wait)
-            time.sleep(wait)
+            logger.warning("SoundCloud returned 0 playlists (attempt %d/%d); retrying...", attempt, max_retries)
+            # Show countdown so the user knows it's not frozen
+            for remaining in range(wait, 0, -1):
+                sys.stdout.write(f"\r  Retrying in {remaining}s...")
+                sys.stdout.flush()
+                time.sleep(1)
+            sys.stdout.write("\r" + " " * 40 + "\r")
+            sys.stdout.flush()
             # Clear cached auth so we re-read cookies
             global _cached_oauth_token, _cached_cookies
             _cached_oauth_token = None
