@@ -142,15 +142,16 @@ Backups run:
 
 After SoundCloud sync and AcoustID fingerprinting of the local library, StreamFLACr can offer to upgrade low-quality files (MP3/AAC) to lossless (FLAC/AIFF) by searching Soulseek for higher-quality versions.
 
-**Warning**: This process replaces audio files in the DJ library. Serato/Rekordbox beatgrids, cues, and loops are stored in separate metadata files (`.dat`/ANLZ files), not in the audio files themselves, so they *should* survive a file replacement. But this hasn't been tested on a production library yet.
+**Important constraint**: Upscaling NEVER deletes or replaces files in the primary library. Downloaded higher-quality versions go to the secondary DJ library only. The user must manually decide whether to swap files. This is a hard design principle — DJs' libraries are sacred.
 
 The upscaling flow:
-1. Scan primary DJ library and identify lossy files
+1. Scan primary DJ library and identify lossy files (MP3, AAC)
 2. Fingerprint all local files with chromaprint
-3. Prompt user with warning about beatgrids/cues
-4. Search Soulseek for lossless versions
-5. Verify via fingerprinting that the replacement is the same recording
-6. Replace the file (keeping the same filename for compatibility)
+3. Prompt user with explicit warning (requires confirmation)
+4. Search Soulseek for lossless versions (AIFF > WAV > FLAC > MP3 320kbps)
+5. Verify via AcoustID that the download is the same recording
+6. Download and tag the higher-quality file to staging, then move to the secondary library's import folder
+7. The user reviews and decides whether to keep the upgrade
 
 ### Data Migration
 When any code change modifies the format of `state.json`, config, or other operational data, a migration step must be added to `updater._migrate_state()`. Similarly, any code change requires evaluating whether the installer (`setup.py`) or uninstaller (`full_uninstall()`) need updates.
