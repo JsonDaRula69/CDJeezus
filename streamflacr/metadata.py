@@ -1,10 +1,9 @@
 """Audio metadata tagging, verification, and enrichment via mutagen.
 
-Writes artist, title, comment/description (set to the SoundCloud playlist name),
-and other standard fields. Both 'comment' and 'description' are written because
-Serato DJ may read either one for its Comment column depending on version.
-The comment/description field is the primary mechanism for Serato smart crate
-matching (Comment IS <playlist_name>).
+Writes artist, title, description (set to the SoundCloud playlist name),
+and other standard fields. The 'description' Vorbis tag / ID3 COMM with empty
+description is what Serato DJ reads for its Comment column, which is matched
+by smart crate rules (Comment IS <playlist_name>).
 
 Supports both FLAC (Vorbis comments) and MP3 (ID3v2 tags).
 """
@@ -27,8 +26,8 @@ def tag_file(
 ) -> None:
     """Write core metadata to a FLAC or MP3 file.
 
-    Both 'comment' and 'description' Vorbis tags (FLAC) or COMM frames (MP3)
-    are set to the playlist name for Serato smart crate matching.
+    The 'description' Vorbis tag (FLAC) or COMM with empty description (MP3)
+    is set to the playlist name for Serato smart crate matching.
     The 'label' field is set to the SoundCloud label_name (record company).
     """
     if filepath.suffix.lower() == ".flac":
@@ -146,9 +145,7 @@ def _tag_flac(filepath, artist, title, playlist_name, album, genre, year, label_
     audio = FLAC(str(filepath))
     audio["artist"] = artist
     audio["title"] = title
-    # Write playlist name to both 'comment' and 'description' Vorbis tags.
-    # Serato DJ may read either one for its Comment column depending on version.
-    audio["comment"] = playlist_name
+    # Serato DJ reads the 'description' Vorbis tag for its Comment column.
     audio["description"] = playlist_name
     if label_name:
         audio["label"] = label_name
@@ -166,10 +163,8 @@ def _tag_mp3(filepath, artist, title, playlist_name, album, genre, year, label_n
     audio = ID3(str(filepath))
     audio.add(TPE1(encoding=3, text=artist))
     audio.add(TIT2(encoding=3, text=title))
-    # Write COMM with both empty desc and "StreamFLACr" desc.
-    # Serato may read either for its Comment column depending on version.
+    # Serato DJ reads COMM with empty description for its Comment column.
     audio.add(COMM(encoding=3, lang="eng", desc="", text=playlist_name))
-    audio.add(COMM(encoding=3, lang="eng", desc="StreamFLACr", text=playlist_name))
     if label_name:
         audio.add(TPUB(encoding=3, text=label_name))
     if album:
@@ -186,7 +181,7 @@ def _enrich_flac(filepath: Path, updates: dict):
     audio = FLAC(str(filepath))
     for key, val in updates.items():
         audio[key] = val
-    # Keep description in sync with comment for Serato compatibility
+    # Keep description in sync with comment if comment is being updated
     if "comment" in updates:
         audio["description"] = updates["comment"]
     audio.save()
