@@ -445,8 +445,8 @@ async def graceful_shutdown(slsk: SoulseekDownloader, state: StateManager) -> No
         logger.info("Running post-session backup...")
         await asyncio.to_thread(
             run_backups,
-            backup_serato=BACKUP_SERATO,
-            backup_rekordbox=BACKUP_REKORDBOX,
+            do_serato=BACKUP_SERATO,
+            do_rekordbox=BACKUP_REKORDBOX,
         )
 
     # Disconnect from Soulseek
@@ -502,8 +502,8 @@ async def amain(daemon: bool = False) -> None:
         logger.info("Running pre-session backup...")
         await asyncio.to_thread(
             run_backups,
-            backup_serato=BACKUP_SERATO,
-            backup_rekordbox=BACKUP_REKORDBOX,
+            do_serato=BACKUP_SERATO,
+            do_rekordbox=BACKUP_REKORDBOX,
         )
 
     try:
